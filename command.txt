@@ -1,0 +1,11 @@
+docker compose up -d
+docker compose ps
+docker compose exec ollama ollama pull mistral
+docker compose exec -it ollama ollama run mistral
+
+
+stop the container: docker compose down
+start container: docker compose up -d
+
+
+
