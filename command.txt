@@ -1,4 +1,90 @@
 ========================================================================
+ TEAMMATE SETUP GUIDE (DOCKER)
+========================================================================
+
+PREREQUISITES (install once)
+  - Git                    https://git-scm.com
+  - Python 3.10 or newer   https://www.python.org   (for the local venv, steps 3-6)
+  - Docker Desktop         https://www.docker.com/products/docker-desktop
+                           Open it and wait for "Engine running" before step 7
+  - ~6 GB free disk space  Mistral model ~4 GB + app image ~0.8 GB
+
+STEP-BY-STEP (run in PowerShell / VS Code terminal)
+ 1. git clone https://github.com/gohjqCK/INF1103-P6-Team1-Project.git
+                                          # FIRST TIME: download the project
+    git pull                              # ALREADY CLONED: get the latest changes instead
+                                          #   (run git pull from inside the project folder)
+ 2. cd INF1103-P6-Team1-Project           # go into the project folder - ALL commands run from here
+
+ -- Local Python environment (for EDITING and TESTING in VS Code - Docker does not need it) --
+ 3. python -m venv .venv                  # create the venv folder (first time only)
+ 4. .venv\Scripts\Activate.ps1            # activate it - prompt starts with (.venv); redo in every new terminal
+                                          #   "running scripts is disabled" error? run once:
+                                          #   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+ 5. pip install -r requirements.txt       # install the project's packages into the venv (~100 packages)
+ 6. VS Code: Ctrl+Shift+P > "Python: Select Interpreter" > choose the one with ('.venv')
+                                          # removes "Import could not be resolved" warnings
+                                          #   not listed? "Enter interpreter path..." > .venv\Scripts\python.exe
+
+ -- Docker (for RUNNING the app) --
+ 7. docker compose up -d                  # start the Ollama AI server in the background
+ 8. docker compose ps                     # check: "ollama" should show STATUS "Up"
+ 9. docker compose exec ollama ollama pull mistral
+                                          # download Mistral (~4 GB, first time only - it is kept after)
+10. docker compose exec ollama ollama list
+                                          # check: "mistral:latest" is listed
+11. docker build -t resume-cli .          # build the app image - installs requirements.txt INSIDE it
+12. docker run --rm -e OLLAMA_HOST=http://host.docker.internal:11434 resume-cli
+                                          # run the app, connected to the Ollama container
+13. docker compose down                   # stop Ollama when finished (downloaded model is kept)
+
+STOPPING AND RESUMING
+  docker compose stop                     # PAUSE: stop the Ollama container but keep it
+  docker compose start                    # RESUME: start the same container again (fastest)
+
+  docker compose down                     # SHUT DOWN: stop AND remove the container
+  docker compose up -d                    # START AGAIN: create a fresh container
+                                          #   (use this after down, or after docker-compose.yml changes)
+
+  - Downloaded models are kept in both cases - no need to pull Mistral again.
+  - The app container (step 12) removes itself when it finishes (--rm), so there is
+    nothing to stop. Press Ctrl+C to stop it early.
+  - Quitting Docker Desktop stops all containers. Because of "restart: unless-stopped",
+    Ollama starts again automatically when Docker Desktop is reopened - unless you
+    stopped it with "docker compose stop" / "down" first.
+
+EVERY TIME AFTER THAT
+  git pull                                # get teammates' latest changes
+  .venv\Scripts\Activate.ps1              # activate the venv (if VS Code did not do it already)
+  pip install -r requirements.txt         # ONLY if requirements.txt changed
+  docker compose up -d                    # start Ollama (or "docker compose start" if you used stop)
+  docker build -t resume-cli .            # rebuild ONLY if main.py / requirements.txt / Dockerfile changed
+  docker run --rm -e OLLAMA_HOST=http://host.docker.internal:11434 resume-cli
+  docker compose down                     # stop Ollama when finished (or "docker compose stop")
+
+THINGS TO KNOW
+- Do NOT push the .venv folder - it only works on the PC that created it. It is already
+  in .gitignore. Everyone creates their own with steps 3-5.
+- If you pip install a new package, add it to requirements.txt and push, so teammates
+  (and the Docker image) get it too.
+- Docker Desktop must be running. Error "failed to connect to the docker API ...
+  dockerDesktopLinuxEngine" means it is not started.
+- Port 11434 conflict: if the Ollama Windows app is installed, quit it from the system
+  tray first. Only one thing can use port 11434.
+- Packages are installed INSIDE the image, not on your PC. Docker is for RUNNING the app;
+  the venv (steps 3-6) is for EDITING and TESTING. You do not need the venv for Docker.
+- The image is a snapshot. Code changes do not show up until you rebuild (step 11).
+  Rebuilds are fast unless requirements.txt changed (the pip install step is cached).
+- Inside a container "localhost" means the container itself. That is why the app uses
+  host.docker.internal to reach Ollama on your PC.
+- main.py currently only has imports, so step 12 exits without printing anything.
+  That is expected until the CLI is written.
+- docker compose down -v DELETES the downloaded model - avoid the -v unless you want that.
+- Test Mistral directly:  docker compose exec -it ollama ollama run mistral   (type /bye to exit)
+- "no configuration file provided" = you are not in the project folder (see step 2).
+
+
+========================================================================
  COMMAND CHEAT SHEET - run from the project folder (INF1103-P6-Team1-Project)
 ========================================================================
 
