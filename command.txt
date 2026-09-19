@@ -1,11 +1,127 @@
+========================================================================
+ COMMAND CHEAT SHEET - run from the project folder (INF1103-P6-Team1-Project)
+========================================================================
+
+------------------------------------------------------------------------
+1. PYTHON VIRTUAL ENVIRONMENT
+------------------------------------------------------------------------
+python -m venv .venv
+    Create the venv folder. Only needed once per machine (teammates run it after cloning).
+
+.venv\Scripts\Activate.ps1
+    Activate the venv (PowerShell) so python/pip use the project's packages.
+    Needed in every new terminal unless VS Code does it for you.
+    cmd: .venv\Scripts\activate.bat    Git Bash: source .venv/Scripts/activate
+    If "running scripts is disabled": Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+deactivate
+    Leave the venv and go back to the global Python.
+
+pip install -r requirements.txt
+    Install every package in requirements.txt. Run after cloning or when a teammate adds a package.
+
+pip install <package>
+    Install one new package. Add it to requirements.txt afterwards so others and Docker get it too.
+
+pip list
+    Show what is installed in the active environment.
+
+python -c "import sys; print(sys.executable)"
+    Show which Python is running (should be ...\.venv\Scripts\python.exe).
+
+------------------------------------------------------------------------
+2. RUNNING THE APP LOCALLY
+------------------------------------------------------------------------
+python main.py
+    Run the CLI with the venv's Python. Ollama must be running first (section 3).
+
+python main.py --help
+    Show usage (once argparse is set up).
+
+------------------------------------------------------------------------
+3. OLLAMA IN DOCKER
+------------------------------------------------------------------------
+NOTE: the Ollama Windows app also uses port 11434. Quit it from the system tray
+      before "docker compose up -d", or only use one of the two.
+
 docker compose up -d
+    Start the services in docker-compose.yml (ollama) in the background (-d = detached).
+
 docker compose ps
+    List running containers and their status.
+
 docker compose exec ollama ollama pull mistral
+    Download the Mistral model (~4GB) inside the container. Only needed once
+    (the ollama_storage volume keeps it).
+
+docker compose exec ollama ollama pull nomic-embed-text
+    Download the embedding model used for ChromaDB / RAG. Only needed once.
+
+docker compose exec ollama ollama list
+    List the models already downloaded.
+
 docker compose exec -it ollama ollama run mistral
+    Chat with Mistral interactively to test prompts. Type /bye to exit.
 
+docker compose logs -f ollama
+    Follow the container's logs live. Ctrl+C stops watching (container keeps running).
 
-stop the container: docker compose down
-start container: docker compose up -d
+docker compose down
+    Stop and remove the containers. Downloaded models are KEPT in the volume.
 
+docker compose down -v
+    WARNING: also deletes volumes - Mistral is erased and must be downloaded again.
 
+------------------------------------------------------------------------
+4. BUILDING THE APP'S DOCKER IMAGE
+------------------------------------------------------------------------
+docker build -t resume-cli .
+    Build an image from the Dockerfile in this folder and name it resume-cli.
+    Rebuild after changing code or requirements.txt.
 
+docker run --rm resume-cli
+    Run a container from the image. --rm deletes the container when it exits.
+
+docker run --rm -e OLLAMA_HOST=http://host.docker.internal:11434 resume-cli
+    Same, but tell the app where Ollama is. Inside a container "localhost" is the
+    container itself, so host.docker.internal is used to reach your PC.
+
+docker images
+    List images on this machine and their sizes.
+
+docker rmi <image>
+    Delete an image.
+
+(Once an "app" service is added to docker-compose.yml:
+    docker compose build              replaces docker build
+    docker compose run --rm app       replaces docker run)
+
+------------------------------------------------------------------------
+5. GIT
+------------------------------------------------------------------------
+git status
+    Show changed, staged and untracked files.
+
+git pull
+    Download teammates' latest changes. Do this BEFORE starting work.
+
+git add <file>
+    Stage a file for the next commit. Prefer naming files over "git add ." so
+    .venv or resumes are not committed by accident.
+
+git commit -m "message"
+    Save the staged changes with a message.
+
+git push
+    Upload your commits to GitHub.
+
+------------------------------------------------------------------------
+TYPICAL DAILY WORKFLOW
+------------------------------------------------------------------------
+1. git pull                          get latest changes
+2. .venv\Scripts\Activate.ps1        activate the venv (if VS Code didn't)
+3. pip install -r requirements.txt   only if requirements.txt changed
+4. docker compose up -d              start Ollama
+5. python main.py                    run and test the app
+6. git add / git commit / git push   save and share your work
+7. docker compose down               stop Ollama when finished
