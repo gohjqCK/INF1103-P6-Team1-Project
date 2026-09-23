@@ -126,23 +126,101 @@ def get_valid_top_n_candidates(max_available: int = None) -> int:
 
 
 def get_employer_inputs() -> dict:
-    """Main function to run the full input setup.
+    """Displays an interactive configuration menu before launching the pipeline."""
 
-    Runs all prompts sequentially and packages everything into a neat dict
-    for main.py and other managers to grab.
-    """
-    rules_prompt = get_valid_business_rules_prompt()
-    pdf_dir = get_valid_pdf_directory()
-
-    # Pass PDF count to top_n so it can auto-cap if needed
-    pdf_files = [f for f in os.listdir(pdf_dir) if f.lower().endswith(".pdf")]
-    top_n = get_valid_top_n_candidates(max_available=len(pdf_files))
-
-    return {
-        "business_rules": rules_prompt,
-        "pdf_directory": pdf_dir,
-        "top_n": top_n
+    config = {
+        "business_rules": None,
+        "pdf_directory": "resumes",  # default
+        "top_n": 3,  # default
     }
+
+    while True:
+        # Status indicators for menu display
+        rules_status = (
+            "Set" if config["business_rules"] else "NOT SET (Required)"
+        )
+
+        print("\n=============================================")
+        print("          RESUME SCREENER SETUP MENU         ")
+        print("=============================================")
+        print(f"1. Input Business Rules Criteria [{rules_status}]")
+        print(
+            "2. Select Resume Directory      "
+            f" [Current: '{config['pdf_directory']}']"
+        )
+        print(
+            "3. Set Candidate Output Limit   "
+            f" [Current: {config['top_n']}]"
+        )
+        print("4. Proceed to Resume Screening")
+        print("=============================================")
+
+        choice = get_valid_menu_choice(["1", "2", "3", "4"])
+
+        if choice == "1":
+            config["business_rules"] = get_valid_business_rules_prompt()
+
+        elif choice == "2":
+            config["pdf_directory"] = get_valid_pdf_directory()
+
+        elif choice == "3":
+            # Check how many PDFs are available in selected folder to pass as limit cap
+            if os.path.exists(config["pdf_directory"]) and os.path.isdir(
+                config["pdf_directory"]
+            ):
+                pdf_files = [
+                    f
+                    for f in os.listdir(config["pdf_directory"])
+                    if f.lower().endswith(".pdf")
+                ]
+                max_count = len(pdf_files)
+            else:
+                max_count = None
+
+            config["top_n"] = get_valid_top_n_candidates(
+                max_available=max_count
+            )
+
+        elif choice == "4":
+            # Guard check 1: Must enter business rules before starting
+            if not config["business_rules"]:
+                display_error(
+                    "You must input Business Rules Criteria (Option 1) before"
+                    " starting!"
+                )
+                continue
+
+            # Guard check 2: Directory must exist and contain PDFs
+            if not os.path.exists(config["pdf_directory"]):
+                display_error(
+                    f"Selected directory '{config['pdf_directory']}' does not"
+                    " exist. Please update Option 2."
+                )
+                continue
+
+            pdf_files = [
+                f
+                for f in os.listdir(config["pdf_directory"])
+                if f.lower().endswith(".pdf")
+            ]
+            if not pdf_files:
+                display_error(
+                    f"No PDF resumes found in '{config['pdf_directory']}'."
+                    " Add PDFs or pick another folder (Option 2)."
+                )
+                continue
+
+            # Auto-cap top_n if candidate limit exceeds available PDFs
+            if config["top_n"] > len(pdf_files):
+                display_message(
+                    f"  [*] Notice: Capping candidate limit from {config['top_n']} to total available ({len(pdf_files)})."
+                )
+                config["top_n"] = len(pdf_files)
+
+            display_success(
+                "Configuration complete! Handing off to main pipeline...\n"
+            )
+            return config
 
 # =====================================================================
 # LOCAL STANDALONE TEST
