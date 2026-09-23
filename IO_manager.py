@@ -119,3 +119,27 @@ def get_valid_top_n_candidates(max_available: int = None) -> int:
             return max_available
 
         return count
+
+# =====================================================================
+# AGGREGATOR FUNCTION FOR EXTERNAL MANAGERS
+# =====================================================================
+
+
+def get_employer_inputs() -> dict:
+    """Main function to run the full input setup.
+
+    Runs all prompts sequentially and packages everything into a neat dict
+    for main.py and other managers to grab.
+    """
+    rules_prompt = get_valid_business_rules_prompt()
+    pdf_dir = get_valid_pdf_directory()
+
+    # Pass PDF count to top_n so it can auto-cap if needed
+    pdf_files = [f for f in os.listdir(pdf_dir) if f.lower().endswith(".pdf")]
+    top_n = get_valid_top_n_candidates(max_available=len(pdf_files))
+
+    return {
+        "business_rules": rules_prompt,
+        "pdf_directory": pdf_dir,
+        "top_n": top_n
+    }
