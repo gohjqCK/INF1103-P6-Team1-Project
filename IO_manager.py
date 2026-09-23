@@ -143,3 +143,14 @@ def get_employer_inputs() -> dict:
         "pdf_directory": pdf_dir,
         "top_n": top_n
     }
+
+# =====================================================================
+# LOCAL STANDALONE TEST
+# =====================================================================
+
+if __name__ == "__main__":
+    # Quick sanity check when running io_manager.py directly
+    display_message("=== TESTING I/O MANAGER IMPORTABLE FUNCTIONS ===")
+    inputs = get_employer_inputs()
+    display_message("\n--- RETURNED DICTIONARY FOR OTHER MANAGERS ---")
+    display_message(str(inputs))
