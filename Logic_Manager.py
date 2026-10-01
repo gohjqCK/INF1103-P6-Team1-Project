@@ -1,65 +1,53 @@
 import copy
-##create a function that validate the ai outputs, handle errors
-#might delete
-def validate_AIOutput(ai_Output):
-    ##AIOutput data type? type(AIOutput) == "list"
-    ##Extract what? List of resumes ranked by business rules
-    ##filter?
-    print("Valid")
-#might delete also
-def structure_Output(ai_Output):
-    ##structured as [name, age, Diploma, [KeyWords-softskills], [Keywords-skills]]
-    print("Sturcutre")
+#Expected input resume_list =[{},{},{}] List of dictionary (for test script)
+test_data=[{"name":"Sarah","email":"sarah@gmail.com","phone_number":"99128291","address":"Tampines East","Diploma":"Cybersecurity","CGPA":3.0,"SoftSkills":"Teamwork","ID":1},
+           {"name":"Ben","email":"ben@gmail.com","phone_number":"82919912","address":"Bedok North","Diploma":"Information Security","CGPA":3.5,"SoftSkills":"Adaptability","ID":2},
+           {"name":"Shawn","email":"shawn@gmail.com","phone_number":"91289291","address":"Bedok South","Diploma":"Desgin Engineering","CGPA":4.0,"SoftSkills":"Problem-Solving","ID":3},
+           {"name":"Emily","email":"emily@gmail.com","phone_number":"92349291","address":"Jurong West","Diploma":"Desgin Engineering","CGPA":3.7,"SoftSkills":"Problem-Solving","ID":4}]
 
-#Remove name, age, gender andthing that can be discriminatory
-def mask_Output(ai_Output):
+#function to remove personal info
+
+def mask_Resume(resume_Dict):
     #Copies the data
-    masked_data=copy.deepcopy(ai_Output)
-    #initialise asign nuumber to each resume
-    resume_Count=0
-    #delete discriminatory identities and asign a number
+    masked_data=copy.deepcopy(resume_Dict)
+    #List of personal information to mask name, email, phone_number, address
+    pi_List=["name","email", "phone_number","address"]
+    #delete Personal info from every resume
     for resume in masked_data:
-        for i in range(4):
-            del resume[0]
-        resume.insert(0,resume_Count)
-        print(resume)
+        #loops the pi list
+        for item_key in pi_List:
+            del resume[item_key]
+
     return(masked_data)
 
-def rank_Output(filtered_Output):
-    #based on business rules?
-    print("Rank")
-
-#might delete
-#Flag for Criminal Record
-def record_holder(ai_Output):
-    print("he bad")
-
+##Statistics
 #gather keywords
-def gather_Keywords(stats_Copy):
-    #initialise keywords [[keyword1,1],[keyword2,1],[keyword3,2]]
-    keywords=[]
-    for resume in stats_Copy:
-        keywords=stats_Copy[3]  ##index depends on the position of the keyword
-    print("Key")
-    return(keywords)
 
 #Resume Statistics rank which keywords are used most
-def resume_stats(masked_AIOutput):
-    #initialise stats
-    stats_Copy=copy.deepcopy(masked_AIOutput)
-    keyword_List=gather_Keywords(stats_Copy)
+def resume_Stats(masked_DictList):
+    #Dictionary to store keywords (SoftSkills)
+    keywords_Dict={}
+    for masked_resume in masked_DictList:
+        softSkills_Keyword=masked_resume["SoftSkills"]
+        #adds into list if not found, or adds an increment to the value
+        if softSkills_Keyword not in keywords_Dict:
+            keywords_Dict[softSkills_Keyword]= 1
+        else:
+            keywords_Dict[softSkills_Keyword]+=1
+
     print("End of statistics")
-    return()
+    return(keywords_Dict)
+
 
 
 ##Main workflow
+#list of dictinary
 #Output from AI
 ai_Output=""
-#initialise output
-structured_AIOutput= structure_Output(ai_Output)
 #masked output
-masked_AIOutput=mask_Output(structured_AIOutput)
+masked_DictList=mask_Resume(test_data)
 
 #Resume stats
-output_stats=resume_stats(masked_AIOutput)
+output_stats=resume_Stats(masked_DictList)
+print("\t", output_stats)
 
