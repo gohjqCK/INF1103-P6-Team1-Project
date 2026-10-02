@@ -5,8 +5,7 @@
         "Phone": "414-555-0182",
         "Est_Years_Exp": 13,
         "Experience_Titles": [
-            "IT Manager",
-            "IT"
+            "IT Manager"
         ],
         "Education": [
             "Bachelor's",
@@ -24,14 +23,14 @@
         "Est_Years_Exp": 22,
         "Experience_Titles": [
             "Project Manager",
-            "IT Manager",
-            "IT"
+            "IT Manager"
         ],
         "Education": [
             "Bachelor's"
         ],
         "Skills": [
-            "Project Management"
+            "Project Management",
+            "IT Support"
         ],
         "File_Name": "Assistant IT Manager Resume.pdf"
     },
@@ -41,8 +40,7 @@
         "Phone": "N/A",
         "Est_Years_Exp": 8,
         "Experience_Titles": [
-            "Systems Administrator",
-            "IT"
+            "Systems Administrator"
         ],
         "Education": [
             "Bachelor's",
@@ -54,34 +52,13 @@
         ],
         "File_Name": "Casey-Nakamura-System-Administrator-Resume (TechieCV.com).pdf"
     },
-    "Entry Level IT Networking Resume.pdf": {
-        "Name": "DeVry University",
-        "Email": "KCC-CAREERSERVICES@DEVRY.EDU",
-        "Phone": "816-943-7465",
-        "Est_Years_Exp": 22,
-        "Experience_Titles": [
-            "Accountant",
-            "IT"
-        ],
-        "Education": [
-            "Bachelor's"
-        ],
-        "Skills": [
-            "SQL",
-            "Java",
-            "JavaScript",
-            "Project Management",
-            "Excel"
-        ],
-        "File_Name": "Entry Level IT Networking Resume.pdf"
-    },
     "IT Infrastructure Administrator Resume.pdf": {
         "Name": "Infrastructure Administrator",
         "Email": "sasfinrecruitment@sasfin.com",
         "Phone": "N/A",
         "Est_Years_Exp": "Not Specified",
         "Experience_Titles": [
-            "IT",
+            "Systems Engineer",
             "Infrastructure Administrator MANAGER"
         ],
         "Education": [
@@ -99,13 +76,14 @@
         "Est_Years_Exp": 15,
         "Experience_Titles": [
             "IT Manager",
-            "IT"
+            "Systems Engineer"
         ],
         "Education": [
             "Not Specified"
         ],
         "Skills": [
-            "Project Management"
+            "Project Management",
+            "IT Support"
         ],
         "File_Name": "IT Networking Manager Resume.pdf"
     },
@@ -115,14 +93,15 @@
         "Phone": "602-555-0188",
         "Est_Years_Exp": 6,
         "Experience_Titles": [
-            "IT"
+            "Not Specified"
         ],
         "Education": [
             "Bachelor's",
             "Diploma"
         ],
         "Skills": [
-            "Python"
+            "Python",
+            "IT Support"
         ],
         "File_Name": "Jordan-Reyes-IT-Support-Specialist-Resume (TechieCV.com).pdf"
     },
@@ -132,7 +111,7 @@
         "Phone": "N/A",
         "Est_Years_Exp": 8,
         "Experience_Titles": [
-            "IT"
+            "Not Specified"
         ],
         "Education": [
             "Bachelor's",
@@ -151,14 +130,14 @@
         "Phone": "703-555-0148",
         "Est_Years_Exp": 11,
         "Experience_Titles": [
-            "IT"
+            "Not Specified"
         ],
         "Education": [
             "Bachelor's",
             "Diploma"
         ],
         "Skills": [
-            "None Detected"
+            "Troubleshooting"
         ],
         "File_Name": "Mateo-Velez-Network-Administrator-Resume (TechieCV.com).pdf"
     },
@@ -187,8 +166,7 @@
         "Phone": "667.667.5555",
         "Est_Years_Exp": 29,
         "Experience_Titles": [
-            "Project Manager",
-            "IT"
+            "Project Manager"
         ],
         "Education": [
             "Not Specified"
@@ -206,14 +184,15 @@
         "Experience_Titles": [
             "Project Manager",
             "Business Analyst",
-            "IT"
+            "Systems Architect"
         ],
         "Education": [
             "Master's",
             "Bachelor's"
         ],
         "Skills": [
-            "Project Management"
+            "Project Management",
+            "Troubleshooting"
         ],
         "File_Name": "Senior IT Business Analyst Resume.pdf"
     },
@@ -225,7 +204,7 @@
         "Experience_Titles": [
             "Project Manager",
             "Systems Administrator",
-            "IT"
+            "Systems Engineer"
         ],
         "Education": [
             "Master's"
@@ -241,15 +220,15 @@
         "Phone": "N/A",
         "Est_Years_Exp": 15,
         "Experience_Titles": [
-            "Project Manager",
-            "IT"
+            "Project Manager"
         ],
         "Education": [
             "Master's",
             "Bachelor's"
         ],
         "Skills": [
-            "Project Management"
+            "Project Management",
+            "IT Support"
         ],
         "File_Name": "Senior IT Project Manager Resume.pdf"
     },
@@ -259,13 +238,15 @@
         "Phone": "123-456-7890",
         "Est_Years_Exp": 4,
         "Experience_Titles": [
-            "IT"
+            "Not Specified"
         ],
         "Education": [
             "Diploma"
         ],
         "Skills": [
-            "None Detected"
+            "IT Support",
+            "System documentation",
+            "Troubleshooting"
         ],
         "File_Name": "Tech Professional Resume.pdf"
     },

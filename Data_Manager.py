@@ -1,19 +1,32 @@
 import glob
 import os
 import re
-import json
 import pdfplumber
+import pandas as pd
 
 RESUME_FOLDER = "./data"
-OUTPUT_JSON = "converted_resumes.json"
+OUTPUT_CSV = "converted_resumes.csv"
 
 # Regex patterns & Keyword lists
 EMAIL_PATTERN = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 PHONE_PATTERN = r"\(?\b\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b"
 SKILL_KEYWORDS = [
-    "Python", "SQL", "Java", "JavaScript", "React", 
-    "Docker", "AWS", "Project Management", "Excel", 
-    "Machine Learning", "Git"
+    "Python",
+    "SQL",
+    "Java",
+    "JavaScript",
+    "React",
+    "Docker",
+    "AWS",
+    "Project Management",
+    "Excel",
+    "Machine Learning",
+    "Git",
+    "Cloud management",
+    "Database management",
+    "IT Support",
+    "System documentation",
+    "Troubleshooting",
 ]
 # Common job titles to search for across candidate history
 COMMON_JOB_TITLES = [
@@ -31,10 +44,21 @@ COMMON_JOB_TITLES = [
     "Business Analyst",
     "QA Engineer",
     "UI/UX Designer",
-    "Accountant",
     "Marketing Manager",
     "IT Manager",
+    "Database Manager",
+    "Database Architect",
+    "Database Engineer",
+    "Database Developer",
+    "Software Architect",
+    "Software Developer",
+    "Systems Engineer",
+    "Systems Developer",
+    "Systems Architect",
+    "IT Developer",
+    "IT Engineer",
 ]
+
 
 def extract_years_of_experience(text):
     """Business Rule: Find explicit years or calculate from date ranges."""
@@ -52,6 +76,7 @@ def extract_years_of_experience(text):
 
     return "Not Specified"
 
+
 def extract_work_experience(text):
     """Business Rule: Extract job titles found in the resume text."""
     found_titles = []
@@ -61,7 +86,7 @@ def extract_work_experience(text):
         if re.search(rf"\b{re.escape(title)}\b", text, re.IGNORECASE):
             found_titles.append(title)
 
-    # 2. Regex fallback: Look for line patterns in Experience sections (e.g., "Role: Developer" or "Engineer - Company")
+    # 2. Regex fallback: Look for line patterns in Experience sections
     pattern = r"(?:Position|Role|Title):\s*([A-Za-z\s]+)"
     matches = re.findall(pattern, text, re.IGNORECASE)
     for match in matches:
@@ -75,6 +100,7 @@ def extract_work_experience(text):
 
     return found_titles if found_titles else ["Not Specified"]
 
+
 def extract_education(text):
     """Business Rule: Detect degrees mentioned in the text."""
     degrees = []
@@ -84,12 +110,13 @@ def extract_education(text):
         degrees.append("Master's")
     if re.search(r"\b(bachelor|b\.s|b\.a|b\.tech)\b", text, re.IGNORECASE):
         degrees.append("Bachelor's")
-    if re.search(r"\b(diploma|b\.s|b\.a|b\.tech)\b", text, re.IGNORECASE):
+    if re.search(r"\b(diploma)\b", text, re.IGNORECASE):
         degrees.append("Diploma")
 
     return degrees if degrees else ["Not Specified"]
 
-candidates_dictionary = {}
+
+candidates_list = []
 
 # Process each PDF resume
 for file_path in glob.glob(os.path.join(RESUME_FOLDER, "*.pdf")):
@@ -103,7 +130,13 @@ for file_path in glob.glob(os.path.join(RESUME_FOLDER, "*.pdf")):
             page_text = page.extract_text()
             if page_text:
                 full_text_pages.append(page_text)
-                text_lines.extend([line.strip() for line in page_text.split("\n") if line.strip()])
+                text_lines.extend(
+                    [
+                        line.strip()
+                        for line in page_text.split("\n")
+                        if line.strip()
+                    ]
+                )
 
     raw_text = " ".join(full_text_pages)
     clean_text = re.sub(r"\s+", " ", raw_text).strip()
@@ -111,7 +144,9 @@ for file_path in glob.glob(os.path.join(RESUME_FOLDER, "*.pdf")):
     # Extract name (first non-header line)
     candidate_name = "Unknown"
     for line in text_lines:
-        if not re.search(r"resume|curriculum vitae|cv|page", line, re.IGNORECASE):
+        if not re.search(
+            r"resume|curriculum vitae|cv|page", line, re.IGNORECASE
+        ):
             candidate_name = line
             break
 
@@ -120,27 +155,34 @@ for file_path in glob.glob(os.path.join(RESUME_FOLDER, "*.pdf")):
     phone_match = re.search(PHONE_PATTERN, clean_text)
 
     found_skills = [
-        skill for skill in SKILL_KEYWORDS 
+        skill
+        for skill in SKILL_KEYWORDS
         if re.search(rf"\b{re.escape(skill)}\b", clean_text, re.IGNORECASE)
     ]
 
-    # Create entity dictionary with keys matching the previous headers
+    # Convert lists to semicolon-separated strings for clean CSV representation
+    exp_titles = extract_work_experience(clean_text)
+    education_degrees = extract_education(clean_text)
+
     candidate_entity = {
         "Name": candidate_name,
         "Email": email_match.group(0) if email_match else "N/A",
         "Phone": phone_match.group(0) if phone_match else "N/A",
         "Est_Years_Exp": extract_years_of_experience(clean_text),
-        "Experience_Titles": extract_work_experience(clean_text),        
-        "Education": extract_education(clean_text),
-        "Skills": found_skills if found_skills else ["None Detected"],
-        "File_Name": filename
+        "Experience_Titles": "; ".join(exp_titles),
+        "Education": "; ".join(education_degrees),
+        "Skills": (
+            "; ".join(found_skills) if found_skills else "None Detected"
+        ),
+        "File_Name": filename,
     }
 
-    # Store using the filename (or candidate name) as the primary key
-    candidates_dictionary[filename] = candidate_entity
+    candidates_list.append(candidate_entity)
 
-# Save to JSON file
-with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-    json.dump(candidates_dictionary, f, indent=4, ensure_ascii=False)
+# Export to CSV using pandas
+df = pd.DataFrame(candidates_list)
+df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8")
 
-print(f"Successfully processed {len(candidates_dictionary)} resumes into '{OUTPUT_JSON}'.")
+print(
+    f"Successfully processed {len(candidates_list)} resumes into '{OUTPUT_CSV}'."
+)
