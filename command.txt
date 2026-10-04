@@ -7,7 +7,7 @@ PREREQUISITES (install once)
   - Python 3.10 or newer   https://www.python.org   (for the local venv, steps 3-6)
   - Docker Desktop         https://www.docker.com/products/docker-desktop
                            Open it and wait for "Engine running" before step 7
-  - ~6 GB free disk space  Mistral model ~4 GB + app image ~0.8 GB
+  - ~6.5 GB free disk space Mistral ~4 GB + nomic-embed-text ~0.3 GB + app image ~0.8 GB
 
 STEP-BY-STEP (run in PowerShell / VS Code terminal)
  1. git clone https://github.com/gohjqCK/INF1103-P6-Team1-Project.git
@@ -31,12 +31,18 @@ STEP-BY-STEP (run in PowerShell / VS Code terminal)
  8. docker compose ps                     # check: "ollama" should show STATUS "Up"
  9. docker compose exec ollama ollama pull mistral
                                           # download Mistral (~4 GB, first time only - it is kept after)
+    docker compose exec ollama ollama pull nomic-embed-text
+                                          # download the embedding model used by ChromaDB (~270 MB, first time only)
 10. docker compose exec ollama ollama list
-                                          # check: "mistral:latest" is listed
+                                          # check: "mistral:latest" AND "nomic-embed-text:latest" are listed
 11. docker build -t resume-cli .          # build the app image - installs requirements.txt INSIDE it
 12. docker run --rm -e OLLAMA_HOST=http://host.docker.internal:11434 resume-cli
                                           # run the app, connected to the Ollama container
 13. docker compose down                   # stop Ollama when finished (downloaded model is kept)
+
+ -- Run the AI Manager locally (venv activated, Ollama running from step 7) --
+    python AI_Manager.py                  # reads the PDFs in data/, splits them into sections,
+                                          #   and saves the result to resumes.json
 
 STOPPING AND RESUMING
   docker compose stop                     # PAUSE: stop the Ollama container but keep it
@@ -58,7 +64,7 @@ EVERY TIME AFTER THAT
   .venv\Scripts\Activate.ps1              # activate the venv (if VS Code did not do it already)
   pip install -r requirements.txt         # ONLY if requirements.txt changed
   docker compose up -d                    # start Ollama (or "docker compose start" if you used stop)
-  docker build -t resume-cli .            # rebuild ONLY if main.py / requirements.txt / Dockerfile changed
+  docker build -t resume-cli .            # rebuild ONLY if a .py file / requirements.txt / Dockerfile changed
   docker run --rm -e OLLAMA_HOST=http://host.docker.internal:11434 resume-cli
   docker compose down                     # stop Ollama when finished (or "docker compose stop")
 
@@ -67,6 +73,8 @@ THINGS TO KNOW
   in .gitignore. Everyone creates their own with steps 3-5.
 - If you pip install a new package, add it to requirements.txt and push, so teammates
   (and the Docker image) get it too.
+- The app needs BOTH models in Ollama: mistral (scoring) and nomic-embed-text (ChromaDB
+  section matching). Check with: docker compose exec ollama ollama list
 - Docker Desktop must be running. Error "failed to connect to the docker API ...
   dockerDesktopLinuxEngine" means it is not started.
 - Port 11434 conflict: if the Ollama Windows app is installed, quit it from the system
