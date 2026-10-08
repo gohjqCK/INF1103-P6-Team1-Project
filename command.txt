@@ -7,7 +7,8 @@ PREREQUISITES (install once)
   - Python 3.10 or newer   https://www.python.org   (for the local venv, steps 3-6)
   - Docker Desktop         https://www.docker.com/products/docker-desktop
                            Open it and wait for "Engine running" before step 7
-  - ~6.5 GB free disk space Mistral ~4 GB + nomic-embed-text ~0.3 GB + app image ~0.8 GB
+  - ~7 GB free disk space  Qwen 2.5 7B ~4.7 GB + nomic-embed-text ~0.3 GB + app image ~0.8 GB
+  - 16 GB RAM recommended  the AI model uses ~5.5 GB while running (no graphics card needed)
 
 STEP-BY-STEP (run in PowerShell / VS Code terminal)
  1. git clone https://github.com/gohjqCK/INF1103-P6-Team1-Project.git
@@ -29,20 +30,22 @@ STEP-BY-STEP (run in PowerShell / VS Code terminal)
  -- Docker (for RUNNING the app) --
  7. docker compose up -d                  # start the Ollama AI server in the background
  8. docker compose ps                     # check: "ollama" should show STATUS "Up"
- 9. docker compose exec ollama ollama pull mistral
-                                          # download Mistral (~4 GB, first time only - it is kept after)
+ 9. docker compose exec ollama ollama pull qwen2.5:7b
+                                          # download the AI model (~4.7 GB, first time only - it is kept after)
     docker compose exec ollama ollama pull nomic-embed-text
                                           # download the embedding model used by ChromaDB (~270 MB, first time only)
 10. docker compose exec ollama ollama list
-                                          # check: "mistral:latest" AND "nomic-embed-text:latest" are listed
+                                          # check: "qwen2.5:7b" AND "nomic-embed-text:latest" are listed
 11. docker build -t resume-cli .          # build the app image - installs requirements.txt INSIDE it
 12. docker run --rm -e OLLAMA_HOST=http://host.docker.internal:11434 resume-cli
                                           # run the app, connected to the Ollama container
 13. docker compose down                   # stop Ollama when finished (downloaded model is kept)
 
  -- Run the AI Manager locally (venv activated, Ollama running from step 7) --
-    python AI_Manager.py                  # reads the PDFs in data/, splits them into sections,
-                                          #   and saves the result to resumes.json
+    python AI_Manager.py                  # reads the PDFs in data/ (resumes.json), then checks, scores and
+                                          #   summarises each resume (results.json). On a CPU this takes
+                                          #   about 2-4 minutes per resume - use a small test folder first
+    $env:OLLAMA_MODEL = "mistral"         # OPTIONAL: use a different downloaded model for this terminal only
 
 STOPPING AND RESUMING
   docker compose stop                     # PAUSE: stop the Ollama container but keep it
@@ -52,7 +55,7 @@ STOPPING AND RESUMING
   docker compose up -d                    # START AGAIN: create a fresh container
                                           #   (use this after down, or after docker-compose.yml changes)
 
-  - Downloaded models are kept in both cases - no need to pull Mistral again.
+  - Downloaded models are kept in both cases - no need to pull Qwen again.
   - The app container (step 12) removes itself when it finishes (--rm), so there is
     nothing to stop. Press Ctrl+C to stop it early.
   - Quitting Docker Desktop stops all containers. Because of "restart: unless-stopped",
@@ -73,8 +76,11 @@ THINGS TO KNOW
   in .gitignore. Everyone creates their own with steps 3-5.
 - If you pip install a new package, add it to requirements.txt and push, so teammates
   (and the Docker image) get it too.
-- The app needs BOTH models in Ollama: mistral (scoring) and nomic-embed-text (ChromaDB
-  section matching). Check with: docker compose exec ollama ollama list
+- The app needs BOTH models in Ollama: qwen2.5:7b (checking and scoring) and nomic-embed-text
+  (ChromaDB section matching). Check with: docker compose exec ollama ollama list
+- resumes.json and results.json contain applicants' personal data (names, emails, phone numbers).
+  Do NOT commit them - add both to .gitignore.
+- Everything runs offline after the models are downloaded; no resume data leaves the computer.
 - Docker Desktop must be running. Error "failed to connect to the docker API ...
   dockerDesktopLinuxEngine" means it is not started.
 - Port 11434 conflict: if the Ollama Windows app is installed, quit it from the system
@@ -88,7 +94,7 @@ THINGS TO KNOW
 - main.py currently only has imports, so step 12 exits without printing anything.
   That is expected until the CLI is written.
 - docker compose down -v DELETES the downloaded model - avoid the -v unless you want that.
-- Test Mistral directly:  docker compose exec -it ollama ollama run mistral   (type /bye to exit)
+- Test Qwen directly:  docker compose exec -it ollama ollama run qwen2.5:7b   (type /bye to exit)
 - "no configuration file provided" = you are not in the project folder (see step 2).
 
 
@@ -144,8 +150,8 @@ docker compose up -d
 docker compose ps
     List running containers and their status.
 
-docker compose exec ollama ollama pull mistral
-    Download the Mistral model (~4GB) inside the container. Only needed once
+docker compose exec ollama ollama pull qwen2.5:7b
+    Download the Qwen 2.5 7B model (~4.7GB) inside the container. Only needed once
     (the ollama_storage volume keeps it).
 
 docker compose exec ollama ollama pull nomic-embed-text
@@ -154,8 +160,8 @@ docker compose exec ollama ollama pull nomic-embed-text
 docker compose exec ollama ollama list
     List the models already downloaded.
 
-docker compose exec -it ollama ollama run mistral
-    Chat with Mistral interactively to test prompts. Type /bye to exit.
+docker compose exec -it ollama ollama run qwen2.5:7b
+    Chat with Qwen interactively to test prompts. Type /bye to exit.
 
 docker compose logs -f ollama
     Follow the container's logs live. Ctrl+C stops watching (container keeps running).
@@ -164,7 +170,7 @@ docker compose down
     Stop and remove the containers. Downloaded models are KEPT in the volume.
 
 docker compose down -v
-    WARNING: also deletes volumes - Mistral is erased and must be downloaded again.
+    WARNING: also deletes volumes - the downloaded models are erased and must be downloaded again.
 
 ------------------------------------------------------------------------
 4. BUILDING THE APP'S DOCKER IMAGE
