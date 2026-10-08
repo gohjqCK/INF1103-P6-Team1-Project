@@ -5,3 +5,7 @@ venv/
 # Python cache files
 __pycache__/
 *.pyc
+
+# Program output - contains applicants' personal data (names, emails, phone numbers)
+resumes.json
+results.json
