@@ -33,33 +33,76 @@ def get_valid_menu_choice(allowed_choices: list[str]) -> str:
         display_error(f"Invalid choice. Allowed options: {', '.join(allowed_choices)}")
 
 
-def get_valid_business_rules_prompt() -> str:
-    """Asks the employer for evaluation criteria.
+def get_valid_priority() -> str:
+    """Prompts for a priority weight.
 
-    Reads multi-line text until double-ENTER is pressed, then makes sure
-    it's long enough (>= 15 chars) so the AI gets actual useful context.
+    If the user presses Enter without picking a weight (or selects option 5),
+    the rule has no weight assigned and defaults to 'reject'.
     """
-    print("\n--- EMPLOYER BUSINESS RULES & EVALUATION CRITERIA ---")
-    print("Define criteria for the AI (e.g., mandatory skills, minimum experience, key duties):")
-    print("(Press ENTER twice on a blank line when finished typing)\n")
+    print("  Select priority weight:")
+    print("    1. Must (Weight: 4)")
+    print("    2. Important (Weight: 3)")
+    print("    3. Nice (Weight: 2)")
+    print("    4. Can consider (Weight: 1)")
+    print("    5. No weight (Sets priority to 'reject')")
+
+    choice_map = {
+        "1": "must",
+        "2": "important",
+        "3": "nice",
+        "4": "can consider"
+    }
 
     while True:
-        lines = []
+        choice = input("Enter priority (1-4, or press Enter for no weight/reject): ").strip()
+
+        # If user leaves it blank or types 5, treat as no weight provided
+        if choice in ["", "5"]:
+            display_message("  [*] No weight provided. Setting priority to 'reject'.")
+            return "reject"
+
+        if choice in choice_map:
+            return choice_map[choice]
+
+        display_error("Invalid choice. Select 1-4, or press Enter / 5 for no weight/reject.")
+
+
+def get_valid_business_rules() -> list[dict]:
+    """Interactively collects business rules line by line with priority weights.
+
+    Returns a list of dictionaries formatted for downstream evaluation.
+    """
+    print("\n--- EMPLOYER BUSINESS RULES & EVALUATION CRITERIA ---")
+    print("Add your evaluation rules one by one.")
+
+    rules = []
+
+    while True:
+        rule_num = len(rules) + 1
+        print(f"\n[Rule #{rule_num}]")
+
+        # 1. Capture rule text
         while True:
-            line = input()
-            # Double blank line indicates the user is done typing
-            if line == "" and lines and lines[-1] == "":
-                lines.pop()
+            text = input("Enter rule requirement: ").strip()
+            if len(text) >= 5:
                 break
-            lines.append(line)
+            display_error("Rule text is too short. Please provide a clear requirement (min 5 chars).")
 
-        raw_prompt = "\n".join(lines).strip()
+        # 2. Capture priority level (defaults to 'reject' if no weight is given)
+        priority = get_valid_priority()
 
-        if len(raw_prompt) >= 15:
-            display_success("Business rules prompt accepted.")
-            return raw_prompt
+        # 3. Save rule
+        rules.append({"text": text, "priority": priority})
+        display_success(f"Added Rule #{rule_num} [{priority}]: '{text}'")
 
-        display_error("Input too short or empty. Provide detailed criteria (minimum 15 chars).")
+        # 4. Prompt if user has more rules
+        print("\nDo you want to add another rule?")
+        more = get_valid_menu_choice(["y", "n"])
+        if more.lower() == "n":
+            break
+
+    display_success(f"Configured total of {len(rules)} business rule(s).")
+    return rules
 
 
 def get_valid_pdf_directory() -> str:
@@ -127,99 +170,64 @@ def get_valid_top_n_candidates(max_available: int = None) -> int:
 
 def get_employer_inputs() -> dict:
     """Displays an interactive configuration menu before launching the pipeline."""
-
     config = {
-        "business_rules": None,
-        "pdf_directory": "resumes",  # default
-        "top_n": 3,  # default
+        "business_rules": [],       # Stores list of rule dicts: [{"text": ..., "priority": ...}]
+        "pdf_directory": "resumes",  # Default directory
+        "top_n": 3                   # Default limit
     }
 
     while True:
-        # Status indicators for menu display
-        rules_status = (
-            "Set" if config["business_rules"] else "NOT SET (Required)"
-        )
+        # Show how many rules are configured
+        if config["business_rules"]:
+            rules_status = f"{len(config['business_rules'])} Rule(s) Configured"
+        else:
+            rules_status = "NOT SET (Required)"
 
         print("\n=============================================")
         print("          RESUME SCREENER SETUP MENU         ")
         print("=============================================")
         print(f"1. Input Business Rules Criteria [{rules_status}]")
-        print(
-            "2. Select Resume Directory      "
-            f" [Current: '{config['pdf_directory']}']"
-        )
-        print(
-            "3. Set Candidate Output Limit   "
-            f" [Current: {config['top_n']}]"
-        )
+        print(f"2. Select Resume Directory       [Current: '{config['pdf_directory']}']")
+        print(f"3. Set Candidate Output Limit    [Current: {config['top_n']}]")
         print("4. Proceed to Resume Screening")
         print("=============================================")
 
         choice = get_valid_menu_choice(["1", "2", "3", "4"])
 
         if choice == "1":
-            config["business_rules"] = get_valid_business_rules_prompt()
+            config["business_rules"] = get_valid_business_rules()
 
         elif choice == "2":
             config["pdf_directory"] = get_valid_pdf_directory()
 
         elif choice == "3":
-            # Check how many PDFs are available in selected folder to pass as limit cap
-            if os.path.exists(config["pdf_directory"]) and os.path.isdir(
-                config["pdf_directory"]
-            ):
-                pdf_files = [
-                    f
-                    for f in os.listdir(config["pdf_directory"])
-                    if f.lower().endswith(".pdf")
-                ]
+            if os.path.exists(config["pdf_directory"]) and os.path.isdir(config["pdf_directory"]):
+                pdf_files = [f for f in os.listdir(config["pdf_directory"]) if f.lower().endswith(".pdf")]
                 max_count = len(pdf_files)
             else:
                 max_count = None
 
-            config["top_n"] = get_valid_top_n_candidates(
-                max_available=max_count
-            )
+            config["top_n"] = get_valid_top_n_candidates(max_available=max_count)
 
         elif choice == "4":
-            # Guard check 1: Must enter business rules before starting
             if not config["business_rules"]:
-                display_error(
-                    "You must input Business Rules Criteria (Option 1) before"
-                    " starting!"
-                )
+                display_error("You must input Business Rules Criteria (Option 1) before starting!")
                 continue
 
-            # Guard check 2: Directory must exist and contain PDFs
             if not os.path.exists(config["pdf_directory"]):
-                display_error(
-                    f"Selected directory '{config['pdf_directory']}' does not"
-                    " exist. Please update Option 2."
-                )
+                display_error(f"Selected directory '{config['pdf_directory']}' does not exist. Please update Option 2.")
                 continue
 
-            pdf_files = [
-                f
-                for f in os.listdir(config["pdf_directory"])
-                if f.lower().endswith(".pdf")
-            ]
+            pdf_files = [f for f in os.listdir(config["pdf_directory"]) if f.lower().endswith(".pdf")]
             if not pdf_files:
-                display_error(
-                    f"No PDF resumes found in '{config['pdf_directory']}'."
-                    " Add PDFs or pick another folder (Option 2)."
-                )
+                display_error(f"No PDF resumes found in '{config['pdf_directory']}'. Add PDFs or pick another folder (Option 2).")
                 continue
 
-            # Auto-cap top_n if candidate limit exceeds available PDFs
             if config["top_n"] > len(pdf_files):
-                display_message(
-                    f"  [*] Notice: Capping candidate limit from {config['top_n']} to total available ({len(pdf_files)})."
-                )
+                display_message(f"  [*] Notice: Capping candidate limit from {config['top_n']} to total available ({len(pdf_files)}).")
                 config["top_n"] = len(pdf_files)
 
-            display_success(
-                "Configuration complete! Handing off to main pipeline...\n"
-            )
+            display_success("Configuration complete! Handing off to main pipeline...\n")
             return config
 
 # =====================================================================
