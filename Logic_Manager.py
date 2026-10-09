@@ -2,35 +2,16 @@ import copy
 import json
 with open('results.json', 'r') as file:
     test_data = json.load(file)
-'''test_data=[{ "file": "Entry Level IT Networking Resume.pdf","name": "","email": "","phone": "","outcome": "invalid","score": None,"reason": "Too long for one resume (26 pages)","summary": "",
-   "skills": [],"qualifications": [],"work_experience": [],"projects": []}
-   ] '''
-
 
 '''variable resume only used in for loops'''
 
-#function to remove personal info
-def mask_resume_func(resume_dict):
-    #Copies the data
-    resume_list_copy=copy.deepcopy(resume_dict)
-    filtered_outcome= filter_resume_func(resume_list_copy)
-    filtered_resume=filtered_outcome[0]
-    rejected_resume=filtered_outcome[1]
-    #List of personal information to mask name, email, phone_number
-    pi_list=["name","email", "phone"]
-    #delete Personal info from every resume
-    for resume in filtered_resume:
-        #loops the pi list
-        for item_key in pi_list:
-            del resume[item_key]
-
-    return([filtered_resume, rejected_resume])
-
 #Remove invalid resumes and resumes that scored 0.0
 def filter_resume_func(resume_list):
+    #Copies the data
+    resume_list_copy=copy.deepcopy(resume_list)
     rejected_list=[]
     filtered_list=[]
-    for resume in resume_list:
+    for resume in resume_list_copy:
         if resume["outcome"]=="invalid" or resume["score"]==0.0:
             rejected_list.append(resume)
             continue
@@ -131,7 +112,7 @@ def resume_stats(masked_dictList):
 #Output from AI
 ai_output=""
 #masked output
-mask_result=mask_resume_func(test_data)
+mask_result=filter_resume_func(test_data)
 masked_filtered_resume= mask_result[0]
 rejected_resume=mask_result[1]
 output_rejected_resume_func(rejected_resume)
