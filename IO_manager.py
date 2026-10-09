@@ -1,5 +1,6 @@
 import json
 import os
+import glob
 import sys
 
 # These functions wrap print statements to centralize formatting 
@@ -299,27 +300,72 @@ def display_screening_results(ranked_candidates: list[dict], top_n: int = None) 
     print("=" * 75 + "\n")
 
 
-def view_saved_results(file_path: str = "results.json", top_n: int = None) -> None:
-    """Loads results.json from disk and passes it to display_screening_results."""
-    if not os.path.exists(file_path):
-        display_error(f"'{file_path}' not found. Please run the screening first (Option 3).")
+def find_results_file(target_file: str = None) -> str | None:
+    """Finds a valid results JSON file without requiring a strict filename.
+
+    Checks:
+    1. An explicitly provided path (if given).
+    2. Common names ('filtered_resume.json', 'results.json', 'ranked_resumes.json').
+    3. The most recently modified .json file in the working directory.
+    """
+    # 1. Check explicit name if supplied
+    if target_file and os.path.exists(target_file):
+        return target_file
+
+    # 2. Check standard teammate convention names
+    common_names = [
+        "filtered_resume.json",
+        "results.json",
+        "ranked_resumes.json",
+    ]
+    for filename in common_names:
+        if os.path.exists(filename):
+            return filename
+
+    # 3. Find any .json files in the project root (excluding system/git files)
+    json_files = glob.glob("*.json")
+    if json_files:
+        # Sort by most recently modified first
+        newest_file = max(json_files, key=os.path.getmtime)
+        return newest_file
+
+    return None
+
+
+def view_saved_results(
+    file_path: str = None, top_n: int = None
+) -> None:
+    """Locates any available results JSON file and displays candidate rankings."""
+    detected_file = find_results_file(file_path)
+
+    if not detected_file:
+        display_error(
+            "No results file found (e.g., 'filtered_resume.json' or"
+            " 'results.json').\nPlease run screening first (Option 3)."
+        )
         return
 
+    display_message(f"\n  [i] Loading results from '{detected_file}'...")
+
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(detected_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         if not isinstance(data, list):
-            display_error(f"'{file_path}' does not contain a valid list.")
+            display_error(
+                f"'{detected_file}' does not contain a valid candidate list."
+            )
             return
 
         display_screening_results(data, top_n=top_n)
 
     except json.JSONDecodeError:
-        display_error(f"Could not parse '{file_path}'. File appears damaged or incomplete.")
+        display_error(
+            f"Could not parse '{detected_file}'. File appears damaged or"
+            " incomplete."
+        )
     except Exception as e:
         display_error(f"Failed to read results: {e}")
-
 
 # =====================================================================
 # AGGREGATOR FUNCTION FOR EXTERNAL MANAGERS
@@ -382,7 +428,8 @@ def get_employer_inputs() -> dict:
             return config
 
         elif choice == "4":
-            view_saved_results(file_path="results.json", top_n=config["top_n"])
+            # Passing file_path=None lets find_results_file() automatically pick up whatever JSON exists
+            view_saved_results(file_path=None, top_n=config["top_n"])
 
         elif choice == "5":
             display_message("\nExiting Resume Screener. Goodbye!")
