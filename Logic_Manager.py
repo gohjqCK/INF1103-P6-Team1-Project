@@ -30,11 +30,9 @@ def mask_resume_func(resume_dict):
 def filter_resume_func(resume_list):
     rejected_list=[]
     for resume in resume_list:
-        print(resume["score"])
         if resume["outcome"]=="invalid" or resume["score"]==0.0:
-            print("rejected")
-            print(resume["score"])
-            rejected_list.append(resume_list.remove(resume))
+            
+            rejected_list.append()
             continue
     return([resume_list,rejected_list])
 
