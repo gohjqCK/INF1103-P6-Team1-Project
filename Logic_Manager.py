@@ -1,53 +1,119 @@
 import copy
 #Expected input resume_list =[{},{},{}] List of dictionary (for test script)
-test_data=[{"name":"Sarah","email":"sarah@gmail.com","phone_number":"99128291","address":"Tampines East","Diploma":"Cybersecurity","CGPA":3.0,"SoftSkills":"Teamwork","ID":1},
-           {"name":"Ben","email":"ben@gmail.com","phone_number":"82919912","address":"Bedok North","Diploma":"Information Security","CGPA":3.5,"SoftSkills":"Adaptability","ID":2},
-           {"name":"Shawn","email":"shawn@gmail.com","phone_number":"91289291","address":"Bedok South","Diploma":"Desgin Engineering","CGPA":4.0,"SoftSkills":"Problem-Solving","ID":3},
-           {"name":"Emily","email":"emily@gmail.com","phone_number":"92349291","address":"Jurong West","Diploma":"Desgin Engineering","CGPA":3.7,"SoftSkills":"Problem-Solving","ID":4}]
+test_data=[{ "file": "Entry Level IT Networking Resume.pdf","name": "","email": "","phone": "","outcome": "invalid","score": None,"reason": "Too long for one resume (26 pages)","summary": "",
+   "skills": [],"qualifications": [],"work_experience": [],"projects": []}
+   ]
+
+'''variable resume only used in for loops'''
 
 #function to remove personal info
-
-def mask_Resume(resume_Dict):
+def mask_resume_func(resume_dict):
     #Copies the data
-    masked_data=copy.deepcopy(resume_Dict)
-    #List of personal information to mask name, email, phone_number, address
-    pi_List=["name","email", "phone_number","address"]
+    resume_list_copy=copy.deepcopy(resume_dict)
+    filtered_resume= filter_resume_func(resume_list_copy)
+    #List of personal information to mask name, email, phone_number
+    pi_list=["name","email", "phone"]
     #delete Personal info from every resume
-    for resume in masked_data:
+    for resume in filtered_resume:
         #loops the pi list
-        for item_key in pi_List:
+        for item_key in pi_list:
             del resume[item_key]
 
-    return(masked_data)
+    return(filtered_resume)
+
+#Remove invalid resumes and resumes that scored 0.0
+def filter_resume_func(resume_list):
+    for resume in resume_list:
+        if resume["outcome"]=="invalid" or resume["score"]==0.0:
+            resume_list.remove(resume)
+            continue
+    return(resume_list)
+
+#Orders the list from highest to lowest score // using merge sort
+def sort_resume_func(resume_list):
+    score_list=extract_scores_func(resume_list)
+    sorted_scores=sort_score_func(score_list)
+    sorted_resume_list=link_score_to_list_func(sorted_scores, resume_list)
+    return sorted_resume_list
+
+#Extract scores of resumes
+def extract_scores_func(resume_list):
+    score_list=[]
+    for resume in resume_list:
+        score_list.append[resume["score"]]
+    return score_list
+
+#Merge sort scores
+def sort_score_func(score_list):
+    # Base case: A list of zero or one elements is already sorted
+    if len(score_list) <= 1:
+        return score_list
+    
+    # Divide: Split the array into two halves
+    mid = len(score_list) // 2
+    left_half = score_list[:mid]
+    right_half = score_list[mid:]
+    
+    # Conquer: Recursively sort both halves
+    sorted_left = sort_score_func(left_half)
+    sorted_right = sort_score_func(right_half)
+    
+    # Merge: Combine the sorted halves
+    return merge(sorted_left, sorted_right)
+
+def merge(left, right):
+    result = []
+    i = j = 0
+    # Compare elements from both parts and build the sorted list
+    while i < len(left) and j < len(right):
+        if left[i] > right[j]:
+            result.append(left[i])
+            i += 1
+        else:
+            result.append(right[j])
+            j += 1
+    # Append any remaining elements left over from either list
+    result.extend(left[i:])
+    result.extend(right[j:])
+    return result
+
+def link_score_to_list_func(sorted_scores, resume_list):
+    for resume in resume_list:
+        #finds the value of score in loop resume
+        resume_score=resume["score"]
+        #finds the index of the score on the sorted list
+        index_position= sorted_scores.index(resume_score)
+        #Replace the sorted score with the resume
+        sorted_scores[index_position]=resume
+    return sorted_scores
+    
 
 ##Statistics
-#gather keywords
-
-#Resume Statistics rank which keywords are used most
-def resume_Stats(masked_DictList):
+#Resume Statistics rank which keywords are used most (Deciding what to do)
+def resume_stats(masked_dictList):
     #Dictionary to store keywords (SoftSkills)
-    keywords_Dict={}
-    for masked_resume in masked_DictList:
-        softSkills_Keyword=masked_resume["SoftSkills"]
+    keywords_dict={}
+    for masked_resume in masked_dictList:
+        softSkills_keyword=masked_resume["skills"]
         #adds into list if not found, or adds an increment to the value
-        if softSkills_Keyword not in keywords_Dict:
-            keywords_Dict[softSkills_Keyword]= 1
+        if softSkills_keyword not in keywords_dict:
+            keywords_dict[softSkills_keyword]= 1
         else:
-            keywords_Dict[softSkills_Keyword]+=1
+            keywords_dict[softSkills_keyword]+=1
 
     print("End of statistics")
-    return(keywords_Dict)
+    return(keywords_dict)
 
 
 
 ##Main workflow
 #list of dictinary
 #Output from AI
-ai_Output=""
+ai_output=""
 #masked output
-masked_DictList=mask_Resume(test_data)
-
+masked_dictList=mask_resume_func(test_data)
+sorted_resume= sort_resume_func(masked_dictList)
 #Resume stats
-output_stats=resume_Stats(masked_DictList)
+#output_stats=resume_stats(masked_dictList)
 print("\t", output_stats)
 
