@@ -31,8 +31,8 @@ def filter_resume_func(resume_list):
     rejected_list=[]
     for resume in resume_list:
         if resume["outcome"]=="invalid" or resume["score"]==0.0:
-            
-            rejected_list.append()
+            rejected_list.append(resume)
+            resume_list.remove(resume)
             continue
     return([resume_list,rejected_list])
 
@@ -112,7 +112,7 @@ def resume_stats(masked_dictList):
     print("End of statistics")
     return(keywords_dict)
 
-##name, score, reason
+
 
 ##Main workflow
 #list of dictinary
@@ -121,7 +121,8 @@ ai_output=""
 #masked output
 mask_result=mask_resume_func(test_data)
 masked_filtered_resume= mask_result[0]
-#rejected_resume=mask_result[1]
+rejected_resume=mask_result[1]
+print(masked_filtered_resume)
 #sorted_resume= sort_resume_func(masked_filtered_resume)
 #Resume stats
 #output_stats=resume_stats(masked_dictList)
