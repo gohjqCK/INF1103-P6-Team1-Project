@@ -1,3 +1,4 @@
+import json
 import os
 
 # These functions wrap print statements to centralize formatting 
@@ -257,12 +258,81 @@ def configure_resumes_and_limit() -> tuple[str, int]:
 
 
 # =====================================================================
+# RESULTS DISPLAY (LOGIC MANAGER OUTPUT)
+# =====================================================================
+
+
+def display_screening_results(ranked_candidates: list[dict]) -> None:
+    """Takes ranked candidate records from Logic Manager and displays
+
+    a clean, uncluttered CLI leaderboard (Rank, Name, Score, Reason).
+    """
+    if not ranked_candidates:
+        display_message("\n  [i] No ranked candidates to display.")
+        return
+
+    print("\n" + "=" * 75)
+    print("                       TOP RANKED CANDIDATES")
+    print("=" * 75)
+
+    for idx, candidate in enumerate(ranked_candidates, start=1):
+        # Use rank from logic_manager if present, otherwise use sorted position
+        rank = candidate.get("rank", idx)
+
+        # Candidate name with fallback to file name
+        name = candidate.get("name", "").strip()
+        if not name:
+            name = candidate.get("file", "Unknown Candidate")
+
+        # Score formatting
+        score = candidate.get("score")
+        if score is not None:
+            score_str = f"{score:.1f}%"
+        else:
+            outcome = candidate.get("outcome", "disqualified")
+            score_str = f"N/A ({outcome})"
+
+        reason = candidate.get("reason", "No evaluation summary provided.")
+
+        # Clean card layout
+        print(f"\n  [Rank #{rank}]  {name}")
+        print(f"      Score  : {score_str}")
+        print(f"      Reason : {reason}")
+
+    print("\n" + "-" * 75)
+    print("  [*] Full details (contact, skills, experience) saved to results.json")
+    print("=" * 75 + "\n")
+
+
+def view_saved_results(file_path: str = "results.json") -> None:
+    """Loads results.json from disk and passes it to display_screening_results."""
+    if not os.path.exists(file_path):
+        display_error(f"'{file_path}' not found. Please run the screening first (Option 3).")
+        return
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            display_error(f"'{file_path}' does not contain a valid list.")
+            return
+
+        display_screening_results(data)
+
+    except json.JSONDecodeError:
+        display_error(f"Could not parse '{file_path}'. File appears damaged or incomplete.")
+    except Exception as e:
+        display_error(f"Failed to read results: {e}")
+
+
+# =====================================================================
 # AGGREGATOR FUNCTION FOR EXTERNAL MANAGERS
 # =====================================================================
 
 
 def get_employer_inputs() -> dict:
-    """Displays an interactive configuration menu before launching the pipeline."""
+    """Displays the main interactive configuration menu."""
     config = {
         "business_rules": [],       # Stores list of rule dicts: [{"text": ..., "priority": ...}]
         "pdf_directory": "resumes",  # Default directory
@@ -281,15 +351,15 @@ def get_employer_inputs() -> dict:
         print(f"1. Manage Business Rules Criteria [{rules_status}]")
         print(f"2. Configure Resumes & Limit      [Folder: '{config['pdf_directory']}', Limit: {config['top_n']}]")
         print("3. Proceed to Resume Screening")
+        print("4. View Screening Results (from results.json)")
         print("=============================================")
 
-        choice = get_valid_menu_choice(["1", "2", "3"])
+        choice = get_valid_menu_choice(["1", "2", "3", "4"])
 
         if choice == "1":
             config["business_rules"] = manage_business_rules(config["business_rules"])
 
         elif choice == "2":
-            # Combined flow: prompts directory, then immediately prompts candidate limit
             folder, limit = configure_resumes_and_limit()
             config["pdf_directory"] = folder
             config["top_n"] = limit
@@ -314,7 +384,12 @@ def get_employer_inputs() -> dict:
 
             display_success("Configuration complete! Handing off to main pipeline...\n")
             return config
-        
+
+        elif choice == "4":
+            # Display results from results.json using current top_n limit
+            view_saved_results(file_path="results.json", top_n=config["top_n"])
+
+
 # =====================================================================
 # LOCAL STANDALONE TEST
 # =====================================================================
