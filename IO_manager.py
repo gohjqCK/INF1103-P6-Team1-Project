@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 # These functions wrap print statements to centralize formatting 
 # and keep console output styling consistent across the whole application.
@@ -346,9 +347,10 @@ def get_employer_inputs() -> dict:
         print(f"2. Configure Resumes & Limit      [Folder: '{config['pdf_directory']}', Limit: {config['top_n']}]")
         print("3. Proceed to Resume Screening")
         print("4. View Screening Results (from results.json)")
+        print("5. Exit Application")
         print("=============================================")
 
-        choice = get_valid_menu_choice(["1", "2", "3", "4"])
+        choice = get_valid_menu_choice(["1", "2", "3", "4", "5"])
 
         if choice == "1":
             config["business_rules"] = manage_business_rules(config["business_rules"])
@@ -380,9 +382,11 @@ def get_employer_inputs() -> dict:
             return config
 
         elif choice == "4":
-            # Display results from results.json using current top_n limit
             view_saved_results(file_path="results.json", top_n=config["top_n"])
 
+        elif choice == "5":
+            display_message("\nExiting Resume Screener. Goodbye!")
+            sys.exit(0)
 
 # =====================================================================
 # LOCAL STANDALONE TEST
