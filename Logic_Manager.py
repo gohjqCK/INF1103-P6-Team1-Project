@@ -1,5 +1,5 @@
 import copy
-import json ##DELETE LTR
+import json
 with open('results.json', 'r') as file:
     test_data = json.load(file)
 '''test_data=[{ "file": "Entry Level IT Networking Resume.pdf","name": "","email": "","phone": "","outcome": "invalid","score": None,"reason": "Too long for one resume (26 pages)","summary": "",
@@ -29,19 +29,31 @@ def mask_resume_func(resume_dict):
 #Remove invalid resumes and resumes that scored 0.0
 def filter_resume_func(resume_list):
     rejected_list=[]
+    filtered_list=[]
     for resume in resume_list:
         if resume["outcome"]=="invalid" or resume["score"]==0.0:
             rejected_list.append(resume)
-            resume_list.remove(resume)
             continue
-    return([resume_list,rejected_list])
+        else:
+            filtered_list.append(resume)
+    return([filtered_list,rejected_list])
 
 #Orders the list from highest to lowest score // using merge sort
 def sort_resume_func(resume_list):
     score_list=extract_scores_func(resume_list)
     sorted_scores=sort_score_func(score_list)
     sorted_resume_list=link_score_to_list_func(sorted_scores, resume_list)
+    output_filtered_resume_func(sorted_resume_list)
+
     return sorted_resume_list
+
+def output_filtered_resume_func(resume_data):
+    with open("filtered_resume.json","w") as file:
+        json.dump(resume_data,file, ensure_ascii=False, indent=4)
+
+def output_rejected_resume_func(rejected_data):
+    with open("rejected_resume.json","w") as file:
+        json.dump(rejected_data,file, ensure_ascii=False, indent=4)
 
 #Extract scores of resumes
 def extract_scores_func(resume_list):
@@ -122,8 +134,9 @@ ai_output=""
 mask_result=mask_resume_func(test_data)
 masked_filtered_resume= mask_result[0]
 rejected_resume=mask_result[1]
-print(masked_filtered_resume)
-#sorted_resume= sort_resume_func(masked_filtered_resume)
+output_rejected_resume_func(rejected_resume)
+sorted_resume= sort_resume_func(masked_filtered_resume)
+
 #Resume stats
 #output_stats=resume_stats(masked_dictList)
 #print("\t", output_stats)
