@@ -1,0 +1,7 @@
+# Extra settings for computers WITH an NVIDIA graphics card (e.g. RTX 5070).
+# Docker merges this on top of docker-compose.yml when both files are named:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# Do NOT use it on computers without an NVIDIA GPU: Ollama's container will fail to start.
+services:
+  ollama:
+    gpus: all   # give the Ollama container access to every NVIDIA GPU

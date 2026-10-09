@@ -1,187 +1,210 @@
-import glob
+"""Data Manager: reads the resume PDFs, checks they are usable, and saves them as JSON for the AI Manager."""
 import json
+import logging
 import os
-import re
-import pdfplumber
+from pathlib import Path
 
-RESUME_FOLDER = "./data"
-OUTPUT_JSON = "converted_resumes.json"
+from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings
+from pypdf import PdfReader
 
-# Regex patterns & Keyword lists
-EMAIL_PATTERN = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-PHONE_PATTERN = r"\(?\b\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b"
-SKILL_KEYWORDS = [
-    "Python",
-    "SQL",
-    "Java",
-    "JavaScript",
-    "React",
-    "Docker",
-    "AWS",
-    "Project Management",
-    "Excel",
-    "Machine Learning",
-    "Git",
-    "Cloud management",
-    "Database management",
-    "IT Support",
-    "System documentation",
-    "Troubleshooting",
-]
+logging.getLogger("pypdf").setLevel(logging.CRITICAL)   # hide pypdf's font warnings
 
-COMMON_JOB_TITLES = [
-    "Software Engineer",
-    "Senior Software Engineer",
-    "Frontend Developer",
-    "Backend Developer",
-    "Full Stack Developer",
-    "Data Scientist",
-    "Data Analyst",
-    "Project Manager",
-    "Product Manager",
-    "DevOps Engineer",
-    "Systems Administrator",
-    "Business Analyst",
-    "QA Engineer",
-    "UI/UX Designer",
-    "Marketing Manager",
-    "IT Manager",
-    "Database Manager",
-    "Database Architect",
-    "Database Engineer",
-    "Database Developer",
-    "Software Architect",
-    "Software Developer",
-    "Systems Engineer",
-    "Systems Developer",
-    "Systems Architect",
-    "IT Developer",
-    "IT Engineer",
-]
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+
+MIN_TEXT_LENGTH = 200     # less text than this usually means a scanned image, not a real text PDF
+MAX_TEXT_LENGTH = 20000   # more than this won't fit in the AI's context window with the prompt
+
+HEADING_MATCH_THRESHOLD = 0.70   # below this, the heading is not similar enough to any section
+SECTION_DESCRIPTIONS = {
+    "contact":         "Contact details: phone number, email, address and website",
+    "summary":         "Summary: a short profile or overview of the candidate and their career objective",
+    "skills":          "Skills: technical skills, tools, technologies and core competencies",
+    "qualifications":  "Qualifications: degrees, university, college, academic qualifications, professional certificates, licences and training courses",
+    "work_experience": "Work experience: employment history, jobs held, roles and companies worked for",
+    "projects":        "Projects: personal, academic or professional projects",
+    "other":           "Other: awards, languages, interests, volunteering and references",
+}
+SECTION_HEADINGS = {
+    "contact":         ["contact"],
+    "summary":         ["summary", "profile", "objective", "synopsis", "highlights", "keyqualifications",
+                        "aboutme", "experiencesummary"],
+    "skills":          ["skills", "competencies", "expertise", "strengths", "proficiencies",
+                        "technicalsummary", "highlightsofexpertise"],
+    "qualifications":  ["education", "qualifications", "coursework", "academic",
+                        "certification", "certificate", "credentials", "licenses", "training"],
+    "work_experience": ["experience", "employment", "workhistory", "careerhistory", "careerhighlights"],
+    "projects":        ["projects"],
+    "other":           ["personalinformation", "awards", "languages", "interests",
+                        "volunteer", "references", "affiliations", "activities"],
+}
 
 
-def extract_full_pdf_text(pdf):
-    """Function to extract ALL raw text across all pages of a PDF into a single string."""
-    page_texts = []
-    text_lines = []
-    for page in pdf.pages:
-        text = page.extract_text()
-        if text:
-            page_texts.append(text)
-            text_lines.extend(
-                [line.strip() for line in text.split("\n") if line.strip()]
-            )
+def build_section_store() -> Chroma:
+    """Store each section description in ChromaDB so headings can be matched against them."""
+    # 1. The embedding model that turns text into vectors
+    embedder = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_HOST)
 
-    raw_combined = " ".join(page_texts)
-    clean_text = re.sub(r"\s+", " ", raw_combined).strip()
+    # 2. An empty collection in memory, comparing vectors by cosine similarity
+    store = Chroma(
+        collection_name="section_headings",
+        embedding_function=embedder,
+        collection_metadata={"hnsw:space": "cosine"},
+    )
 
-    return clean_text, text_lines
+    # 3. Build three matching lists: description text, its section name, and a unique id
+    texts = []
+    metadatas = []
+    ids = []
+    for name, description in SECTION_DESCRIPTIONS.items():
+        texts.append(description)
+        metadatas.append({"section": name})
+        ids.append(name)
 
-
-def extract_years_of_experience(text):
-    """Business Rule: Find explicit years or calculate from date ranges."""
-    pattern = r"(\d{1,2})\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience"
-    match = re.search(pattern, text, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-
-    years = re.findall(r"\b(20\d{2}|19\d{2})\b", text)
-    if len(years) >= 2:
-        years_sorted = sorted([int(y) for y in years])
-        span = years_sorted[-1] - years_sorted[0]
-        if 0 < span <= 45:
-            return span
-
-    return "Not Specified"
+    # 4. Add them to the collection (ChromaDB embeds each description now, once)
+    store.add_texts(texts=texts, metadatas=metadatas, ids=ids)
+    return store
 
 
-def extract_work_experience(text):
-    """Business Rule: Extract job titles found in the resume text."""
-    found_titles = []
+def match_heading(store: Chroma, heading: str) -> tuple:
+    """Find the section whose description is closest in meaning to a heading."""
+    # 1. Ask ChromaDB for the single closest description (k=1)
+    results = store.similarity_search_with_score(heading, k=1)
+    closest = results[0][0]
+    distance = results[0][1]
 
-    for title in COMMON_JOB_TITLES:
-        if re.search(rf"\b{re.escape(title)}\b", text, re.IGNORECASE):
-            found_titles.append(title)
+    # 2. ChromaDB gives a distance (0 = identical); turn it into a similarity (1 = identical)
+    similarity = round(1 - distance, 3)
 
-    pattern = r"(?:Position|Role|Title):\s*([A-Za-z\s]+)"
-    matches = re.findall(pattern, text, re.IGNORECASE)
-    for match in matches:
-        cleaned_match = match.strip()
-        if (
-            cleaned_match
-            and len(cleaned_match) < 40
-            and cleaned_match not in found_titles
-        ):
-            found_titles.append(cleaned_match)
-
-    return found_titles if found_titles else ["Not Specified"]
+    # 3. Only accept the match if it is similar enough
+    if similarity >= HEADING_MATCH_THRESHOLD:
+        section = closest.metadata["section"]
+    else:
+        section = None
+    return section, similarity
 
 
-def extract_education(text):
-    """Business Rule: Detect degrees mentioned in the text."""
-    degrees = []
-    if re.search(r"\b(ph\.?d|doctorate)\b", text, re.IGNORECASE):
-        degrees.append("PhD")
-    if re.search(r"\b(master|m\.s|m\.a|mba)\b", text, re.IGNORECASE):
-        degrees.append("Master's")
-    if re.search(r"\b(bachelor|b\.s|b\.a|b\.tech)\b", text, re.IGNORECASE):
-        degrees.append("Bachelor's")
-    if re.search(r"\b(diploma)\b", text, re.IGNORECASE):
-        degrees.append("Diploma")
+def split_sections(text: str, store: Chroma) -> dict:
+    """Split resume text into sections using its headings: keywords first, then ChromaDB."""
+    # Start every section as empty text
+    sections = {}
+    for name in SECTION_HEADINGS:
+        sections[name] = ""
 
-    return degrees if degrees else ["Not Specified"]
+    current = "contact"   # text before the first heading is usually the name and contact details
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+
+        # 1. Keep only the letters, so "P E R S O N A L  P R O F I L E" becomes "personalprofile"
+        letters = ""
+        for ch in stripped.lower():
+            if ch.isalpha():
+                letters += ch
+
+        # 2. Decide if the line looks like a heading
+        if len(letters) == 0:
+            looks_like_heading = False      # empty line, or only numbers and symbols
+        elif len(letters) > 35:
+            looks_like_heading = False      # too long to be a heading
+        elif stripped.isupper():
+            looks_like_heading = True       # e.g. "PROFILE SUMMARY"
+        elif stripped.istitle():
+            looks_like_heading = True       # e.g. "Professional Experience"
+        elif stripped.endswith(":"):
+            looks_like_heading = True       # e.g. "Certifications:"
+        else:
+            looks_like_heading = False      # a normal sentence or list item
+
+        # 3. Find the longest (most specific) keyword in the line, and the section it belongs to
+        keyword_section = None
+        longest = 0
+        for section, keywords in SECTION_HEADINGS.items():
+            for keyword in keywords:
+                if keyword in letters and len(keyword) > longest:
+                    keyword_section = section
+                    longest = len(keyword)
+
+        # 4. Decide which section this line starts (None means it is a normal line)
+        if not looks_like_heading:
+            new_section = None                                          # not a heading
+        elif keyword_section is not None:
+            new_section = keyword_section                               # heading matched by a keyword
+        else:
+            new_section, similarity = match_heading(store, stripped)    # heading with no keyword: ask ChromaDB
+
+        # 5. A heading switches the current section; any other line is added to it
+        if new_section is None:
+            sections[current] += line + "\n"
+        else:
+            current = new_section
+
+    # 6. Tidy up extra blank lines at the start and end of each section
+    for name in sections:
+        sections[name] = sections[name].strip()
+    return sections
 
 
-# Master dictionary structure with 'candidates' key
-extracted_database = {"candidates": {}}
+def save_resumes(resumes: list[dict], output_file: str) -> list[dict]:
+    """Save the resumes as JSON with valid ones first and invalid ones at the bottom."""
+    valid = []
+    invalid = []
+    for resume in resumes:
+        if resume["status"] == "valid":
+            valid.append(resume)
+        else:
+            invalid.append(resume)
 
-# Process each PDF resume
-for file_path in glob.glob(os.path.join(RESUME_FOLDER, "*.pdf")):
-    filename = os.path.basename(file_path)
+    ordered = valid + invalid
+    with open(output_file, "w", encoding="utf-8") as file:
+        json.dump(ordered, file, indent=2, ensure_ascii=False)
+    return ordered
 
-    with pdfplumber.open(file_path) as pdf:
-        clean_text, text_lines = extract_full_pdf_text(pdf)
 
-    # Extract name (first non-header line)
-    candidate_name = "Unknown"
-    for line in text_lines:
-        if not re.search(
-            r"resume|curriculum vitae|cv|page", line, re.IGNORECASE
-        ):
-            candidate_name = line
-            break
+def parse_resumes(folder: str = "data", output_file: str = "resumes.json") -> list[dict]:
+    """Read every PDF in a folder, split valid ones into sections, and save them as JSON (invalid ones last)."""
+    store = build_section_store()   # built once, reused for every resume
+    resumes = []
 
-    # Extract fields
-    email_match = re.search(EMAIL_PATTERN, clean_text)
-    phone_match = re.search(PHONE_PATTERN, clean_text)
+    for path in sorted(Path(folder).iterdir()):
+        # 1. Only look at PDF files (.lower() so ".PDF" also counts)
+        if path.suffix.lower() == ".pdf":
 
-    found_skills = [
-        skill
-        for skill in SKILL_KEYWORDS
-        if re.search(rf"\b{re.escape(skill)}\b", clean_text, re.IGNORECASE)
-    ]
+            # 2. Try to read the text from every page
+            text = ""
+            pages = 0
+            error_message = ""
+            try:
+                reader = PdfReader(path)
+                pages = len(reader.pages)
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+            except Exception as error:
+                error_message = f"Could not read the PDF: {error}"
+            text = text.strip()
 
-    exp_titles = extract_work_experience(clean_text)
-    education_degrees = extract_education(clean_text)
+            # 3. Decide whether the resume can be used
+            if error_message != "":
+                status = "invalid"
+                reason = error_message
+            elif len(text) < MIN_TEXT_LENGTH:
+                status = "invalid"
+                reason = "No readable text (it may be a scanned image)"
+            elif len(text) > MAX_TEXT_LENGTH:
+                status = "invalid"
+                reason = f"Too long for one resume ({pages} pages)"
+            else:
+                status = "valid"
+                reason = ""
 
-    # INSIDE THE LOOP NOW:
-    json_candidate_entity = {
-        "Name": candidate_name,
-        "Email": email_match.group(0) if email_match else "N/A",
-        "Phone": phone_match.group(0) if phone_match else "N/A",
-        "Est_Years_Exp": extract_years_of_experience(clean_text),
-        "Experience_Titles": exp_titles,
-        "Education": education_degrees,
-        "Skills": found_skills if found_skills else ["None Detected"],
-        "File_Name": filename,
-        "Full_PDF_Text": clean_text,
-    }
+            # 4. Valid resumes are also split into sections
+            sections = {}
+            if status == "valid":
+                sections = split_sections(text, store)
 
-    # Store under master "candidates" object
-    extracted_database["candidates"][filename] = json_candidate_entity
+            resumes.append({"file": path.name, "status": status, "reason": reason,
+                            "pages": pages, "text": text, "sections": sections})
 
-# Save to JSON file after processing all files
-with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-    json.dump(extracted_database, f, indent=4, ensure_ascii=False)
-
-print(f"Successfully extracted {len(extracted_database['candidates'])} resumes into '{OUTPUT_JSON}'.")
+    # 5. Save as JSON: valid resumes first, invalid ones at the bottom
+    return save_resumes(resumes, output_file)
