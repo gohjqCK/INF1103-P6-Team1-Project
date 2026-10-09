@@ -240,6 +240,22 @@ def get_valid_top_n_candidates(max_available: int = None) -> int:
 
         return count
 
+
+def configure_resumes_and_limit() -> tuple[str, int]:
+    """Sequentially prompts for resume directory, then immediately prompts
+
+    for the candidate limit based on the number of PDFs found.
+    """
+    folder = get_valid_pdf_directory()
+
+    # Determine available PDFs in chosen directory to enforce realistic upper bound
+    pdf_files = [f for f in os.listdir(folder) if f.lower().endswith(".pdf")]
+    limit = get_valid_top_n_candidates(max_available=len(pdf_files))
+
+    display_success(f"Configured directory '{folder}' with candidate limit of {limit}.")
+    return folder, limit
+
+
 # =====================================================================
 # AGGREGATOR FUNCTION FOR EXTERNAL MANAGERS
 # =====================================================================
@@ -263,29 +279,22 @@ def get_employer_inputs() -> dict:
         print("          RESUME SCREENER SETUP MENU         ")
         print("=============================================")
         print(f"1. Manage Business Rules Criteria [{rules_status}]")
-        print(f"2. Select Resume Directory        [Current: '{config['pdf_directory']}']")
-        print(f"3. Set Candidate Output Limit     [Current: {config['top_n']}]")
-        print("4. Proceed to Resume Screening")
+        print(f"2. Configure Resumes & Limit      [Folder: '{config['pdf_directory']}', Limit: {config['top_n']}]")
+        print("3. Proceed to Resume Screening")
         print("=============================================")
 
-        choice = get_valid_menu_choice(["1", "2", "3", "4"])
+        choice = get_valid_menu_choice(["1", "2", "3"])
 
         if choice == "1":
             config["business_rules"] = manage_business_rules(config["business_rules"])
 
         elif choice == "2":
-            config["pdf_directory"] = get_valid_pdf_directory()
+            # Combined flow: prompts directory, then immediately prompts candidate limit
+            folder, limit = configure_resumes_and_limit()
+            config["pdf_directory"] = folder
+            config["top_n"] = limit
 
         elif choice == "3":
-            if os.path.exists(config["pdf_directory"]) and os.path.isdir(config["pdf_directory"]):
-                pdf_files = [f for f in os.listdir(config["pdf_directory"]) if f.lower().endswith(".pdf")]
-                max_count = len(pdf_files)
-            else:
-                max_count = None
-
-            config["top_n"] = get_valid_top_n_candidates(max_available=max_count)
-
-        elif choice == "4":
             if not config["business_rules"]:
                 display_error("You must configure at least one Business Rule (Option 1) before starting!")
                 continue
