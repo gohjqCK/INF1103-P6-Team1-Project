@@ -1,8 +1,11 @@
 import copy
-#Expected input resume_list =[{},{},{}] List of dictionary (for test script)
-test_data=[{ "file": "Entry Level IT Networking Resume.pdf","name": "","email": "","phone": "","outcome": "invalid","score": None,"reason": "Too long for one resume (26 pages)","summary": "",
+import json ##DELETE LTR
+with open('results.json', 'r') as file:
+    test_data = json.load(file)
+'''test_data=[{ "file": "Entry Level IT Networking Resume.pdf","name": "","email": "","phone": "","outcome": "invalid","score": None,"reason": "Too long for one resume (26 pages)","summary": "",
    "skills": [],"qualifications": [],"work_experience": [],"projects": []}
-   ]
+   ] '''
+
 
 '''variable resume only used in for loops'''
 
@@ -10,7 +13,9 @@ test_data=[{ "file": "Entry Level IT Networking Resume.pdf","name": "","email": 
 def mask_resume_func(resume_dict):
     #Copies the data
     resume_list_copy=copy.deepcopy(resume_dict)
-    filtered_resume= filter_resume_func(resume_list_copy)
+    filtered_outcome= filter_resume_func(resume_list_copy)
+    filtered_resume=filtered_outcome[0]
+    rejected_resume=filtered_outcome[1]
     #List of personal information to mask name, email, phone_number
     pi_list=["name","email", "phone"]
     #delete Personal info from every resume
@@ -19,15 +24,19 @@ def mask_resume_func(resume_dict):
         for item_key in pi_list:
             del resume[item_key]
 
-    return(filtered_resume)
+    return([filtered_resume, rejected_resume])
 
 #Remove invalid resumes and resumes that scored 0.0
 def filter_resume_func(resume_list):
+    rejected_list=[]
     for resume in resume_list:
+        print(resume["score"])
         if resume["outcome"]=="invalid" or resume["score"]==0.0:
-            resume_list.remove(resume)
+            print("rejected")
+            print(resume["score"])
+            rejected_list.append(resume_list.remove(resume))
             continue
-    return(resume_list)
+    return([resume_list,rejected_list])
 
 #Orders the list from highest to lowest score // using merge sort
 def sort_resume_func(resume_list):
@@ -40,7 +49,8 @@ def sort_resume_func(resume_list):
 def extract_scores_func(resume_list):
     score_list=[]
     for resume in resume_list:
-        score_list.append[resume["score"]]
+        dictionary_value=resume["score"]
+        score_list.append(dictionary_value)
     return score_list
 
 #Merge sort scores
@@ -104,16 +114,18 @@ def resume_stats(masked_dictList):
     print("End of statistics")
     return(keywords_dict)
 
-
+##name, score, reason
 
 ##Main workflow
 #list of dictinary
 #Output from AI
 ai_output=""
 #masked output
-masked_dictList=mask_resume_func(test_data)
-sorted_resume= sort_resume_func(masked_dictList)
+mask_result=mask_resume_func(test_data)
+masked_filtered_resume= mask_result[0]
+#rejected_resume=mask_result[1]
+#sorted_resume= sort_resume_func(masked_filtered_resume)
 #Resume stats
 #output_stats=resume_stats(masked_dictList)
-print("\t", output_stats)
+#print("\t", output_stats)
 
