@@ -2,6 +2,10 @@ import pandas as pd
 import json
 from ollama import chat
 
+def Load_Resumes():
+    with open('results.json', 'r', encoding='utf-8') as file:
+        data = json.load(file)
+    print(data)
 
 
 
@@ -62,3 +66,5 @@ def Generate_Resume_Scores(Prompt):
 
     df.to_csv('graded_resumes.csv', index=False)
     print("Processing complete. Results saved to graded_resumes.csv")
+
+Load_Resumes()
