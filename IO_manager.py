@@ -261,30 +261,25 @@ def configure_resumes_and_limit() -> tuple[str, int]:
 # RESULTS DISPLAY (LOGIC MANAGER OUTPUT)
 # =====================================================================
 
-
-def display_screening_results(ranked_candidates: list[dict]) -> None:
-    """Takes ranked candidate records from Logic Manager and displays
-
-    a clean, uncluttered CLI leaderboard (Rank, Name, Score, Reason).
+def display_screening_results(ranked_candidates: list[dict], top_n: int = None) -> None:
+    """Takes ranked candidate records and displays a clean CLI leaderboard.
+    Optionally slices output to top_n candidates.
     """
     if not ranked_candidates:
         display_message("\n  [i] No ranked candidates to display.")
         return
 
+    # Slice list if top_n is specified
+    display_list = ranked_candidates[:top_n] if top_n else ranked_candidates
+
     print("\n" + "=" * 75)
     print("                       TOP RANKED CANDIDATES")
     print("=" * 75)
 
-    for idx, candidate in enumerate(ranked_candidates, start=1):
-        # Use rank from logic_manager if present, otherwise use sorted position
+    for idx, candidate in enumerate(display_list, start=1):
         rank = candidate.get("rank", idx)
-
-        # Candidate name with fallback to file name
-        name = candidate.get("name", "").strip()
-        if not name:
-            name = candidate.get("file", "Unknown Candidate")
-
-        # Score formatting
+        name = candidate.get("name", "").strip() or candidate.get("file", "Unknown Candidate")
+        
         score = candidate.get("score")
         if score is not None:
             score_str = f"{score:.1f}%"
@@ -294,7 +289,6 @@ def display_screening_results(ranked_candidates: list[dict]) -> None:
 
         reason = candidate.get("reason", "No evaluation summary provided.")
 
-        # Clean card layout
         print(f"\n  [Rank #{rank}]  {name}")
         print(f"      Score  : {score_str}")
         print(f"      Reason : {reason}")
@@ -304,7 +298,7 @@ def display_screening_results(ranked_candidates: list[dict]) -> None:
     print("=" * 75 + "\n")
 
 
-def view_saved_results(file_path: str = "results.json") -> None:
+def view_saved_results(file_path: str = "results.json", top_n: int = None) -> None:
     """Loads results.json from disk and passes it to display_screening_results."""
     if not os.path.exists(file_path):
         display_error(f"'{file_path}' not found. Please run the screening first (Option 3).")
@@ -318,7 +312,7 @@ def view_saved_results(file_path: str = "results.json") -> None:
             display_error(f"'{file_path}' does not contain a valid list.")
             return
 
-        display_screening_results(data)
+        display_screening_results(data, top_n=top_n)
 
     except json.JSONDecodeError:
         display_error(f"Could not parse '{file_path}'. File appears damaged or incomplete.")
