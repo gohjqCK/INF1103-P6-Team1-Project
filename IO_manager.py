@@ -67,42 +67,119 @@ def get_valid_priority() -> str:
         display_error("Invalid choice. Select 1-4, or press Enter / 5 for no weight/reject.")
 
 
-def get_valid_business_rules() -> list[dict]:
-    """Interactively collects business rules line by line with priority weights.
+def display_current_rules(rules: list[dict]) -> None:
+    """Prints all configured rules in a numbered list."""
+    if not rules:
+        display_message("\n  [i] No business rules currently configured.")
+        return
 
-    Returns a list of dictionaries formatted for downstream evaluation.
-    """
-    print("\n--- EMPLOYER BUSINESS RULES & EVALUATION CRITERIA ---")
-    print("Add your evaluation rules one by one.")
+    print("\n---------------- CURRENT BUSINESS RULES ----------------")
+    for idx, rule in enumerate(rules, start=1):
+        print(f"  {idx}. [{rule['priority'].upper()}] {rule['text']}")
+    print("-------------------------------------------------------")
 
-    rules = []
+
+def add_business_rules(rules: list[dict]) -> list[dict]:
+    """Interactively prompts user to add rules with priority weights and duplication checks."""
+    print("\n--- ADD BUSINESS RULES ---")
+    print("Enter requirements one at a time.")
 
     while True:
         rule_num = len(rules) + 1
         print(f"\n[Rule #{rule_num}]")
 
-        # 1. Capture rule text
+        # 1. Capture and validate rule text
         while True:
             text = input("Enter rule requirement: ").strip()
-            if len(text) >= 5:
-                break
-            display_error("Rule text is too short. Please provide a clear requirement (min 5 chars).")
+            if len(text) < 5:
+                display_error("Rule text is too short. Please provide a clear requirement (min 5 chars).")
+                continue
 
-        # 2. Capture priority level (defaults to 'reject' if no weight is given)
+            # Duplication Guard: Check if identical requirement already exists (case-insensitive)
+            is_duplicate = any(r["text"].lower() == text.lower() for r in rules)
+            if is_duplicate:
+                display_error(f"Rule '{text}' already exists in your criteria list. Please enter a different rule.")
+                continue
+
+            break
+
+        # 2. Capture priority level
         priority = get_valid_priority()
 
-        # 3. Save rule
+        # 3. Append valid rule
         rules.append({"text": text, "priority": priority})
         display_success(f"Added Rule #{rule_num} [{priority}]: '{text}'")
 
-        # 4. Prompt if user has more rules
+        # 4. Prompt if user wants to add another rule right away
         print("\nDo you want to add another rule?")
         more = get_valid_menu_choice(["y", "n"])
         if more.lower() == "n":
             break
 
-    display_success(f"Configured total of {len(rules)} business rule(s).")
     return rules
+
+
+def delete_single_rule(rules: list[dict]) -> list[dict]:
+    """Allows user to select and delete a specific rule by number."""
+    if not rules:
+        display_message("\n  [i] No rules available to delete.")
+        return rules
+
+    display_current_rules(rules)
+    print("\nEnter the rule number you want to remove (or '0' to cancel):")
+
+    valid_choices = [str(i) for i in range(len(rules) + 1)]
+    choice = get_valid_menu_choice(valid_choices)
+
+    if choice == "0":
+        display_message("Deletion cancelled.")
+        return rules
+
+    removed_rule = rules.pop(int(choice) - 1)
+    display_success(f"Removed Rule: '{removed_rule['text']}'")
+    return rules
+
+
+def manage_business_rules(existing_rules: list[dict]) -> list[dict]:
+    """Sub-menu dashboard to view, add, delete, or clear business rules."""
+    rules = list(existing_rules)
+
+    while True:
+        print("\n=============================================")
+        print("          BUSINESS RULES MANAGEMENT          ")
+        print("=============================================")
+        print(f"Total Rules Configured: {len(rules)}")
+        print("1. View Current Rules")
+        print("2. Add New Rule(s)")
+        print("3. Delete a Specific Rule")
+        print("4. Clear All Rules")
+        print("5. Save & Return to Main Menu")
+        print("=============================================")
+
+        sub_choice = get_valid_menu_choice(["1", "2", "3", "4", "5"])
+
+        if sub_choice == "1":
+            display_current_rules(rules)
+
+        elif sub_choice == "2":
+            rules = add_business_rules(rules)
+
+        elif sub_choice == "3":
+            rules = delete_single_rule(rules)
+
+        elif sub_choice == "4":
+            if not rules:
+                display_message("\n  [i] Rules list is already empty.")
+                continue
+
+            print("\nAre you sure you want to clear all rules?")
+            confirm = get_valid_menu_choice(["y", "n"])
+            if confirm == "y":
+                rules.clear()
+                display_success("All business rules cleared.")
+
+        elif sub_choice == "5":
+            return rules
 
 
 def get_valid_pdf_directory() -> str:
@@ -177,7 +254,6 @@ def get_employer_inputs() -> dict:
     }
 
     while True:
-        # Show how many rules are configured
         if config["business_rules"]:
             rules_status = f"{len(config['business_rules'])} Rule(s) Configured"
         else:
@@ -186,16 +262,16 @@ def get_employer_inputs() -> dict:
         print("\n=============================================")
         print("          RESUME SCREENER SETUP MENU         ")
         print("=============================================")
-        print(f"1. Input Business Rules Criteria [{rules_status}]")
-        print(f"2. Select Resume Directory       [Current: '{config['pdf_directory']}']")
-        print(f"3. Set Candidate Output Limit    [Current: {config['top_n']}]")
+        print(f"1. Manage Business Rules Criteria [{rules_status}]")
+        print(f"2. Select Resume Directory        [Current: '{config['pdf_directory']}']")
+        print(f"3. Set Candidate Output Limit     [Current: {config['top_n']}]")
         print("4. Proceed to Resume Screening")
         print("=============================================")
 
         choice = get_valid_menu_choice(["1", "2", "3", "4"])
 
         if choice == "1":
-            config["business_rules"] = get_valid_business_rules()
+            config["business_rules"] = manage_business_rules(config["business_rules"])
 
         elif choice == "2":
             config["pdf_directory"] = get_valid_pdf_directory()
@@ -211,7 +287,7 @@ def get_employer_inputs() -> dict:
 
         elif choice == "4":
             if not config["business_rules"]:
-                display_error("You must input Business Rules Criteria (Option 1) before starting!")
+                display_error("You must configure at least one Business Rule (Option 1) before starting!")
                 continue
 
             if not os.path.exists(config["pdf_directory"]):
@@ -229,7 +305,7 @@ def get_employer_inputs() -> dict:
 
             display_success("Configuration complete! Handing off to main pipeline...\n")
             return config
-
+        
 # =====================================================================
 # LOCAL STANDALONE TEST
 # =====================================================================
