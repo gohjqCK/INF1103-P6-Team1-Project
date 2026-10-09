@@ -1,11 +1,11 @@
 import glob
+import json
 import os
 import re
 import pdfplumber
-import pandas as pd
 
 RESUME_FOLDER = "./data"
-OUTPUT_CSV = "converted_resumes.csv"
+OUTPUT_JSON = "converted_resumes.json"
 
 # Regex patterns & Keyword lists
 EMAIL_PATTERN = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
@@ -28,7 +28,7 @@ SKILL_KEYWORDS = [
     "System documentation",
     "Troubleshooting",
 ]
-# Common job titles to search for across candidate history
+
 COMMON_JOB_TITLES = [
     "Software Engineer",
     "Senior Software Engineer",
@@ -60,6 +60,24 @@ COMMON_JOB_TITLES = [
 ]
 
 
+def extract_full_pdf_text(pdf):
+    """Function to extract ALL raw text across all pages of a PDF into a single string."""
+    page_texts = []
+    text_lines = []
+    for page in pdf.pages:
+        text = page.extract_text()
+        if text:
+            page_texts.append(text)
+            text_lines.extend(
+                [line.strip() for line in text.split("\n") if line.strip()]
+            )
+
+    raw_combined = " ".join(page_texts)
+    clean_text = re.sub(r"\s+", " ", raw_combined).strip()
+
+    return clean_text, text_lines
+
+
 def extract_years_of_experience(text):
     """Business Rule: Find explicit years or calculate from date ranges."""
     pattern = r"(\d{1,2})\+?\s*(?:years?|yrs?)(?:\s+of)?\s+experience"
@@ -81,12 +99,10 @@ def extract_work_experience(text):
     """Business Rule: Extract job titles found in the resume text."""
     found_titles = []
 
-    # 1. Direct Keyword Matching for known job titles
     for title in COMMON_JOB_TITLES:
         if re.search(rf"\b{re.escape(title)}\b", text, re.IGNORECASE):
             found_titles.append(title)
 
-    # 2. Regex fallback: Look for line patterns in Experience sections
     pattern = r"(?:Position|Role|Title):\s*([A-Za-z\s]+)"
     matches = re.findall(pattern, text, re.IGNORECASE)
     for match in matches:
@@ -116,30 +132,15 @@ def extract_education(text):
     return degrees if degrees else ["Not Specified"]
 
 
-candidates_list = []
+# Master dictionary structure with 'candidates' key
+extracted_database = {"candidates": {}}
 
 # Process each PDF resume
 for file_path in glob.glob(os.path.join(RESUME_FOLDER, "*.pdf")):
     filename = os.path.basename(file_path)
 
-    # Combine all page text into one clean string per PDF
-    full_text_pages = []
-    text_lines = []
     with pdfplumber.open(file_path) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                full_text_pages.append(page_text)
-                text_lines.extend(
-                    [
-                        line.strip()
-                        for line in page_text.split("\n")
-                        if line.strip()
-                    ]
-                )
-
-    raw_text = " ".join(full_text_pages)
-    clean_text = re.sub(r"\s+", " ", raw_text).strip()
+        clean_text, text_lines = extract_full_pdf_text(pdf)
 
     # Extract name (first non-header line)
     candidate_name = "Unknown"
@@ -160,29 +161,27 @@ for file_path in glob.glob(os.path.join(RESUME_FOLDER, "*.pdf")):
         if re.search(rf"\b{re.escape(skill)}\b", clean_text, re.IGNORECASE)
     ]
 
-    # Convert lists to semicolon-separated strings for clean CSV representation
     exp_titles = extract_work_experience(clean_text)
     education_degrees = extract_education(clean_text)
 
-    candidate_entity = {
+    # INSIDE THE LOOP NOW:
+    json_candidate_entity = {
         "Name": candidate_name,
         "Email": email_match.group(0) if email_match else "N/A",
         "Phone": phone_match.group(0) if phone_match else "N/A",
         "Est_Years_Exp": extract_years_of_experience(clean_text),
-        "Experience_Titles": "; ".join(exp_titles),
-        "Education": "; ".join(education_degrees),
-        "Skills": (
-            "; ".join(found_skills) if found_skills else "None Detected"
-        ),
+        "Experience_Titles": exp_titles,
+        "Education": education_degrees,
+        "Skills": found_skills if found_skills else ["None Detected"],
         "File_Name": filename,
+        "Full_PDF_Text": clean_text,
     }
 
-    candidates_list.append(candidate_entity)
+    # Store under master "candidates" object
+    extracted_database["candidates"][filename] = json_candidate_entity
 
-# Export to CSV using pandas
-df = pd.DataFrame(candidates_list)
-df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8")
+# Save to JSON file after processing all files
+with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+    json.dump(extracted_database, f, indent=4, ensure_ascii=False)
 
-print(
-    f"Successfully processed {len(candidates_list)} resumes into '{OUTPUT_CSV}'."
-)
+print(f"Successfully extracted {len(extracted_database['candidates'])} resumes into '{OUTPUT_JSON}'.")
