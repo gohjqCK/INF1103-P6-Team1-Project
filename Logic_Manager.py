@@ -182,7 +182,7 @@ def link_score_to_list_func(sorted_scores, resume_list):
 #list of dictinary
 #Output from AI
 ##AI output file goes here
-stringg="hakim.json"
+stringg="results.json"
 file_path= Path(stringg)
 validate_file_exists=validate_file_exists_func(file_path)
 
