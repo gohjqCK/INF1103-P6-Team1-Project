@@ -1,85 +1,85 @@
-import os
-import re
-import pandas as pd
-import pdfplumber
+import json
+from pathlib import Path
+
+import AI_Manager
 import Data_Manager
 import IO_manager
 import Logic_Manager
-import AI_Manager
 
-def read_pdf(fp):
-    try:
-        with pdfplumber.open(fp) as p: return "\n".join(pg.extract_text() or "" for pg in p.pages).strip()
-    except: return ""
 
-def get_data(text, fn):
-    em, ph = re.search(Data_Manager.EMAIL_PATTERN, text), re.search(Data_Manager.PHONE_PATTERN, text)
-    sk = [s for s in Data_Manager.SKILL_KEYWORDS if re.search(rf"\b{re.escape(s)}\b", text, re.I)]
-    nl = [l.strip() for l in text.splitlines() if l.strip()]
-    name = next((l for l in nl if not re.search(r"resume|curriculum vitae|cv|page", l, re.I)), "Unknown")
-    return {
-        "name": name, "email": em.group(0) if em else "N/A", "phone_number": ph.group(0) if ph else "N/A",
-        "address": "Not Specified", "Est_Years_Exp": Data_Manager.extract_years_of_experience(text),
-        "Experience_Titles": "; ".join(Data_Manager.extract_work_experience(text)),
-        "Education": "; ".join(Data_Manager.extract_education(text)),
-        "Skills": "; ".join(sk) if sk else "None Detected", "SoftSkills": sk[0] if sk else "General", "File_Name": fn
-    }
+def main():
+    # 1. Welcome banner
+    IO_manager.display_message("=" * 50)
+    IO_manager.display_message("          AI RESUME CHECKER          ")
+    IO_manager.display_message("=" * 50)
 
-def process_and_rank_resumes():
-    cfg = IO_manager.get_employer_inputs()
-    ai_on = AI_Manager.check_connection()
-    resumes = []
+    # 2. Check Ollama server connection and required models via AI Manager
+    if not AI_Manager.check_connection():
+        IO_manager.display_error(
+            "Cannot connect to Ollama or required models are missing. "
+            "Please ensure Ollama is running and models are downloaded."
+        )
+        return
+
+    # 3. Get employer configuration and business rules via IO Manager setup menu
+    config = IO_manager.get_employer_inputs()
+    rules = config["business_rules"]
+    pdf_directory = config["pdf_directory"]
+    top_n = config["top_n"]
+
+    # 4. Generate AI keywords for the business rules via AI Manager[cite: 3]
+    IO_manager.display_message("\n[Step 1/4] Generating AI keywords for business rules...")
+    rules = AI_Manager.add_keywords(rules)
+
+    # 5. Parse and structure PDF resumes from the selected directory via Data Manager[cite: 4]
+    IO_manager.display_message(f"\n[Step 2/4] Parsing resumes from directory '{pdf_directory}'...")
+    resumes = Data_Manager.parse_resumes(folder=pdf_directory, output_file="resumes.json")
     
-    for r in AI_Manager.parse_resumes(folder=cfg["pdf_directory"]):
-        txt = r.get("text", "").strip()
-        if len(txt) < 50: txt = read_pdf(os.path.join(cfg["pdf_directory"], r["file"]))
-        if txt: resumes.append({**r, "text": txt})
-
     if not resumes:
-        return IO_manager.display_error("No readable PDF resumes found. Exiting.")
+        IO_manager.display_error("No resumes were found or successfully parsed in the specified directory.")
+        return
 
-    rules = [{"text": re.sub(r"^\d+[\.\)]\s*|^[\-\*]\s*", "", l).strip()} for l in cfg["business_rules"].splitlines() if l.strip()]
-    evals = []  
-    logic_data = []
+    # 6. Screen resumes against rules using the local AI model via AI Manager[cite: 3]
+    IO_manager.display_message("\n[Step 3/4] Screening resumes with AI Manager...")
+    AI_Manager.screen_resumes(rules, resumes, resumes_file="resumes.json", results_file="results.json")
 
-    for r in resumes:
-        m = get_data(r["text"], r["file"])
-        logic_data.append(dict(m))
-        passed, ai_res = 0, None
-        if ai_on:
-            try:
-                ai_res = AI_Manager.start_chat(rules, r["text"])
-                passed = sum(1 for c in ai_res.get("checks", []) if c.get("shows"))
-                if ai_res.get("candidate") and ai_res["candidate"].lower() != "unknown":
-                    m["name"] = ai_res["candidate"].strip()
-            except Exception as e: IO_manager.display_error(f"AI error for {r['file']}: {e}")
-        
-        evals.append({"m": m, "ai": ai_res, "p": passed, "score": (passed / len(rules) * 100) if rules else 0.0})
+    # 7. Validate, filter, export, and sort screening results via Logic Manager[cite: 2]
+    IO_manager.display_message("\n[Step 4/4] Validating, filtering, and ranking results with Logic Manager...")
+    results_path = Path("results.json")
 
-    evals.sort(key=lambda x: x["score"], reverse=True)
-    pd.DataFrame([e["m"] for e in evals]).to_csv("evaluated_candidates.csv", index=False)
-    
-    IO_manager.display_message("\n--- LOGIC MANAGER: ANONYMIZATION & STATS ---")
-    Logic_Manager.resume_Stats(Logic_Manager.mask_Resume(logic_data))
+    # Perform comprehensive validations provided by Logic Manager[cite: 2]
+    if (
+        Logic_Manager.validate_file_exists_func(results_path) == 0
+        and Logic_Manager.validate_file_type_func(results_path) == 0
+        and Logic_Manager.validate_file_empty_func(results_path) == 0
+    ):
+        with open(results_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
-    top = min(cfg["top_n"], len(evals))
-    IO_manager.display_message(f"\n================ TOP {top} CANDIDATE RESULTS ================")
-    for i, e in enumerate(evals[:top], 1):
-        m, ai = e["m"], e["ai"]
-        IO_manager.display_message(f"\n[Rank #{i}] {m['name']} ({m['File_Name']})")
-        IO_manager.display_message(f"  Score: {e['score']:.1f}% ({e['p']}/{len(rules)} criteria met)")
-        IO_manager.display_message(f"  Experience: {m['Est_Years_Exp']} yrs | Roles: {m['Experience_Titles']}")
-        IO_manager.display_message(f"  Education: {m['Education']} | Skills: {m['Skills']}")
-        if ai:
-            IO_manager.display_message(f"  Summary: {ai.get('summary', 'N/A')}")
-            for c in ai.get("checks", []):
-                cid = c.get("id")
-                st = "[✓] PASS" if c.get("shows") else "[✗] FAIL"
-                rt = rules[cid - 1]["text"] if cid <= len(rules) else f"Rule {cid}"
-                ev = c.get("evidence", "").strip().replace("\n", " ") or "No direct evidence found"
-                IO_manager.display_message(f"    {st} - Rule #{cid} ({rt}): {ev}")
+        if (
+            Logic_Manager.validate_resume_func(data) == 0
+            and Logic_Manager.validate_resume_keys_func(data) == 0
+        ):
+            # Filter into valid (scored), rejected, and invalid lists[cite: 2]
+            filtered_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
 
-    IO_manager.display_success("\nResume checking complete.")
+            # Output separated audit files[cite: 2]
+            timestamp = Logic_Manager.date_time_format_func()
+            Logic_Manager.outputfile_func(rejected_resume, f"rejected_resume_{timestamp}.json")
+            Logic_Manager.outputfile_func(invalid_resume, f"invalid_resume_{timestamp}.json")
+
+            # Sort top candidates using merge sort and save to filtered_resume_<timestamp>.json[cite: 2]
+            sorted_resume = Logic_Manager.sort_resume_func(filtered_resume)
+
+            IO_manager.display_success("Pipeline execution completed successfully!")
+
+            # 8. Display formatted leaderboard via IO Manager[cite: 1]
+            IO_manager.display_screening_results(sorted_resume, top_n=top_n)
+        else:
+            IO_manager.display_error("Logic Manager detected invalid data types or missing keys in results.json.")
+    else:
+        IO_manager.display_error("Logic Manager could not validate the results.json file.")
+
 
 if __name__ == "__main__":
-    process_and_rank_resumes()
+    main()
