@@ -1,40 +1,128 @@
+'''Logic_Manager Library'''
 import copy
 import json
-with open('results.json', 'r') as file:
-    test_data = json.load(file)
+from json.decoder import JSONDecodeError
+from pathlib import Path
+from datetime import datetime
 
-'''variable resume only used in for loops'''
+'''===========Logic_Manager Rules:=================
+    variable resume only used in for loops
+    _func are functions to be called'''
+
+#date time format
+def date_time_format_func():
+    dt = datetime.now()
+
+    time_string = dt.strftime("%Y-%m-%d %H-%M-%S")
+    return time_string 
+
+#prints error detected
+def print_err_detected():
+    print("Error detected:")
+
+#prints successful operation
+def print_success():
+    print("Sucessfully executed")
+
+#Checks if file exists
+def validate_file_exists_func(file_path):
+    if file_path.is_file():
+        return 0
+    else:
+        return"LM: The file does not exist. Either AI Output wrong file name or did not output at all"
+
+#Checks if file is json type
+def validate_file_type_func(file_path):
+    if file_path.suffix.lower()==".json":
+        return(0)
+    else:
+        return "LM: AI output wrong file type"
+
+
+#Checks if json file is empty
+def validate_file_empty_func(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+        if not data: 
+            return "LM: The file contains an empty JSON object or array ({ or [])."
+        else:
+            
+            return 0
+    except JSONDecodeError:
+        # This catches completely blank files or files with malformed JSON
+        return "LM: The file is completely empty or contains invalid JSON."
+
+#Validate data type of resume list
+def validate_resume_func(resume_list):
+    #expected data type:List
+
+    resume_data_type=(type(resume_list))
+    if resume_data_type is list:
+        print("LM: Correct Outer data type")
+    else:
+        err_msg="LM: AI did not print out correct data type.\n" \
+                 f"Expected data type <class 'list'>. Data type received: {resume_data_type}"
+        return err_msg
+    resume_count=0
+    for resume in resume_list:
+        if type(resume) is dict:
+            print("Resume in "+ str(resume_count) +" position is dictionary")
+            resume_count+=1
+        else:
+            err_msg="Resume in "+ str(resume_count) +" position is not dictionary"
+            return err_msg
+    return 0
+
+#Check if keys exists: "outcome" and "score"
+def validate_resume_keys_func(resume_list):
+    result=0
+    resume_count=0
+    for resume in resume_list:
+        if "outcome" in resume:
+            print("dictionary in ", resume_count," position has a key named \"outcome\"")
+        else:
+            result= "dictionary in "+ str(resume_count) +" position is missing a key named \"outcome\""
+        if "score" in resume:
+            print("dictionary in ", resume_count," position has a key named \"score\"")
+        else:
+            result= "dictionary in "+ str(resume_count)+" position is missing a key named \"score\""
+            break
+        resume_count+=1
+    return result
 
 #Remove invalid resumes and resumes that scored 0.0
 def filter_resume_func(resume_list):
     #Copies the data
     resume_list_copy=copy.deepcopy(resume_list)
+    invalid_list=[]
     rejected_list=[]
     filtered_list=[]
     for resume in resume_list_copy:
-        if resume["outcome"]=="invalid" or resume["score"]==0.0:
+        if resume["outcome"]!="scored" or type(resume["score"]) is not float:
+            invalid_list.append(resume)
+            continue
+        elif resume["outcome"]=="scored" and resume["score"]==0.0:
             rejected_list.append(resume)
             continue
         else:
             filtered_list.append(resume)
-    return([filtered_list,rejected_list])
+            
+    return [filtered_list,rejected_list,invalid_list]
 
 #Orders the list from highest to lowest score // using merge sort
 def sort_resume_func(resume_list):
     score_list=extract_scores_func(resume_list)
     sorted_scores=sort_score_func(score_list)
     sorted_resume_list=link_score_to_list_func(sorted_scores, resume_list)
-    output_filtered_resume_func(sorted_resume_list)
+    outputfile_func(sorted_resume_list,"filtered_resume_"+str(date_time_format_func())+".json")
 
     return sorted_resume_list
 
-def output_filtered_resume_func(resume_data):
-    with open("filtered_resume.json","w") as file:
-        json.dump(resume_data,file, ensure_ascii=False, indent=4)
+def outputfile_func(resume_data, filename):
+    with open(filename,"w") as file:
+            json.dump(resume_data,file, ensure_ascii=False, indent=4)
 
-def output_rejected_resume_func(rejected_data):
-    with open("rejected_resume.json","w") as file:
-        json.dump(rejected_data,file, ensure_ascii=False, indent=4)
 
 #Extract scores of resumes
 def extract_scores_func(resume_list):
@@ -89,36 +177,61 @@ def link_score_to_list_func(sorted_scores, resume_list):
     return sorted_scores
     
 
-##Statistics
-#Resume Statistics rank which keywords are used most (Deciding what to do)
-def resume_stats(masked_dictList):
-    #Dictionary to store keywords (SoftSkills)
-    keywords_dict={}
-    for masked_resume in masked_dictList:
-        softSkills_keyword=masked_resume["skills"]
-        #adds into list if not found, or adds an increment to the value
-        if softSkills_keyword not in keywords_dict:
-            keywords_dict[softSkills_keyword]= 1
-        else:
-            keywords_dict[softSkills_keyword]+=1
-
-    print("End of statistics")
-    return(keywords_dict)
-
-
 
 ##Main workflow
 #list of dictinary
 #Output from AI
-ai_output=""
-#masked output
-mask_result=filter_resume_func(test_data)
-masked_filtered_resume= mask_result[0]
-rejected_resume=mask_result[1]
-output_rejected_resume_func(rejected_resume)
-sorted_resume= sort_resume_func(masked_filtered_resume)
+##AI output file goes here
+stringg="hakim.json"
+file_path= Path(stringg)
+validate_file_exists=validate_file_exists_func(file_path)
 
-#Resume stats
-#output_stats=resume_stats(masked_dictList)
-#print("\t", output_stats)
+if validate_file_exists!=0:
+    print_err_detected()
+    print(validate_file_exists)
+else:
+    
+    ai_output=""
+    validate_file_extention=validate_file_type_func(file_path)
+
+    if validate_file_extention!=0:
+        print_err_detected()
+        print(validate_file_extention)
+
+    else:
+        validate_file_empty=validate_file_empty_func(file_path)
+
+        if validate_file_empty!=0:
+            print_err_detected()
+            print(validate_file_empty)
+
+        else:
+            with open(file_path, 'r') as file:
+                data = json.load(file)
+            validate_output=validate_resume_func(data)
+
+            if validate_output!=0:
+                print_err_detected()
+                print(validate_output)
+
+            else:
+                validate_keys=validate_resume_keys_func(data)
+
+                if validate_keys!=0:
+                    print_err_detected()
+                    print(validate_keys)
+
+                else:
+                    output_result=filter_resume_func(data)
+                    filtered_resume= output_result[0]
+                    rejected_resume=output_result[1]
+                    invalid_resume=output_result[2]
+                    outputfile_func(rejected_resume,"rejected_resume_"+str(date_time_format_func())+".json")
+                    outputfile_func(invalid_resume,"invalid_resume_"+str(date_time_format_func())+".json")
+                    sorted_resume= sort_resume_func(filtered_resume)
+                    print_success()
+        
+
+
+
 
