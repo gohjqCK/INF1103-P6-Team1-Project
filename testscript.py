@@ -9,13 +9,18 @@ import Logic_Manager
 
 def main():
     if not AI_Manager.check_connection():
-        IO_manager.display_error("Cannot connect to Ollama or required models are missing.\nPlease install required dependancies.")
+        IO_manager.display_error("Cannot connect to Ollama or required models are missing.\nPlease install required dependencies.")
         return
 
-    config = IO_manager.get_employer_inputs()
-    rules = config["business_rules"]
-    pdf_directory = config["pdf_directory"]
-    top_n = config["top_n"]
+
+    rules = [
+        {"text": "At least 2 years of experience", "priority": "must"},
+        {"text": "Proficiency in Python programming", "priority": "important"},
+        {"text": "Has cloud experience", "priority": "nice"},
+        {"text": "Has a criminal record", "priority": "reject"}
+    ]
+    pdf_directory = "resumes"
+    top_n = 5
 
     IO_manager.display_message("\n[1/4] Generating AI prompt from business rules")
     rules = AI_Manager.add_keywords(rules)
@@ -49,9 +54,10 @@ def main():
 
         else:
             IO_manager.display_error("Logic Manager detected invalid data types or missing keys in results.json.")
-
+            
     else:
         IO_manager.display_error("Logic Manager could not validate the results.json file.")
+
 
 if __name__ == "__main__":
     main()
