@@ -1,47 +1,56 @@
+import glob
 import json
 import os
-import glob
 import sys
 
-# These functions wrap print statements to centralize formatting 
-# and keep console output styling consistent across the whole application.
+# =====================================================================
+# DISPLAY HELPERS
+# =====================================================================
 
 
 def display_message(message: str) -> None:
-    """Prints standard application output messages."""
+    """Prints standard CLI information."""
     print(message)
 
 
 def display_error(error_message: str) -> None:
-    """Prints error messages with consistent alert formatting."""
+    """Prints highlighted error notifications."""
     print(f"\n  [!] ERROR: {error_message}\n")
 
 
 def display_success(success_message: str) -> None:
-    """Prints success confirmation messages with positive feedback styling."""
+    """Prints highlighted confirmation notifications."""
     print(f"  [+] SUCCESS: {success_message}")
 
 
 # =====================================================================
-# INPUT VALIDATION FUNCTIONS
+# SAFE INPUT & SELECTION HELPERS
 # =====================================================================
 
 
+def safe_input(prompt_text: str = "") -> str:
+    """Wraps built-in input() to intercept Ctrl+C and Ctrl+D.
+
+    Ensures the CLI shuts down cleanly instead of printing a raw traceback.
+    """
+    try:
+        return input(prompt_text)
+    except (KeyboardInterrupt, EOFError):
+        print("\n\n[!] Session interrupted by user. Exiting safely...")
+        sys.exit(0)
+
+
 def get_valid_menu_choice(allowed_choices: list[str]) -> str:
-    """Keeps re-prompting until the user picks a choice from our allowed list."""
+    """Validates user choice against an explicit list of allowed strings."""
     while True:
-        choice = input(f"Select an option ({'/'.join(allowed_choices)}): ").strip()
+        choice = safe_input(f"Select an option ({'/'.join(allowed_choices)}): ").strip()
         if choice in allowed_choices:
             return choice
-        display_error(f"Invalid choice. Allowed options: {', '.join(allowed_choices)}")
+        display_error(f"Invalid selection. Expected one of: {', '.join(allowed_choices)}")
 
 
 def get_valid_priority() -> str:
-    """Prompts for a priority weight.
-
-    If the user presses Enter without picking a weight (or selects option 5),
-    the rule has no weight assigned and defaults to 'reject'.
-    """
+    """Prompts for rule priority weight. Defaults to 'reject' if left blank."""
     print("  Select priority weight:")
     print("    1. Must (Weight: 4)")
     print("    2. Important (Weight: 3)")
@@ -57,9 +66,8 @@ def get_valid_priority() -> str:
     }
 
     while True:
-        choice = input("Enter priority (1-4, or press Enter for no weight/reject): ").strip()
+        choice = safe_input("Enter priority (1-4, or press Enter / 5 for reject): ").strip()
 
-        # If user leaves it blank or types 5, treat as no weight provided
         if choice in ["", "5"]:
             display_message("  [*] No weight provided. Setting priority to 'reject'.")
             return "reject"
@@ -67,23 +75,30 @@ def get_valid_priority() -> str:
         if choice in choice_map:
             return choice_map[choice]
 
-        display_error("Invalid choice. Select 1-4, or press Enter / 5 for no weight/reject.")
+        display_error("Invalid choice. Select 1-4, or press Enter / 5 for reject.")
+
+
+# =====================================================================
+# BUSINESS RULES MANAGEMENT & DUPLICATION GUARD
+# =====================================================================
 
 
 def display_current_rules(rules: list[dict]) -> None:
-    """Prints all configured rules in a numbered list."""
+    """Prints all configured rules in an indexed list."""
     if not rules:
         display_message("\n  [i] No business rules currently configured.")
         return
 
     print("\n---------------- CURRENT BUSINESS RULES ----------------")
     for idx, rule in enumerate(rules, start=1):
-        print(f"  {idx}. [{rule['priority'].upper()}] {rule['text']}")
+        priority = rule.get("priority", "reject").upper()
+        text = rule.get("text", "<unspecified>")
+        print(f"  {idx}. [{priority}] {text}")
     print("-------------------------------------------------------")
 
 
 def add_business_rules(rules: list[dict]) -> list[dict]:
-    """Interactively prompts user to add rules with priority weights and duplication checks."""
+    """Captures rules line-by-line with length checks and duplicate guards."""
     print("\n--- ADD BUSINESS RULES ---")
     print("Enter requirements one at a time.")
 
@@ -91,29 +106,31 @@ def add_business_rules(rules: list[dict]) -> list[dict]:
         rule_num = len(rules) + 1
         print(f"\n[Rule #{rule_num}]")
 
-        # 1. Capture and validate rule text
         while True:
-            text = input("Enter rule requirement: ").strip()
+            text = safe_input("Enter rule requirement: ").strip()
+
+            # Guard 1: Minimum content validation
             if len(text) < 5:
-                display_error("Rule text is too short. Please provide a clear requirement (min 5 chars).")
+                display_error("Rule text too short. Enter at least 5 characters.")
                 continue
 
-            # Duplication Guard: Check if identical requirement already exists (case-insensitive)
-            is_duplicate = any(r["text"].lower() == text.lower() for r in rules)
+            # Guard 2: Maximum sanity boundary check
+            if len(text) > 300:
+                display_error("Rule text too long (max 300 chars). Keep it concise.")
+                continue
+
+            # Guard 3: Case-insensitive duplication check
+            is_duplicate = any(r.get("text", "").lower() == text.lower() for r in rules)
             if is_duplicate:
-                display_error(f"Rule '{text}' already exists in your criteria list. Please enter a different rule.")
+                display_error(f"Rule '{text}' is already in your list. Enter a unique rule.")
                 continue
 
             break
 
-        # 2. Capture priority level
         priority = get_valid_priority()
-
-        # 3. Append valid rule
         rules.append({"text": text, "priority": priority})
         display_success(f"Added Rule #{rule_num} [{priority}]: '{text}'")
 
-        # 4. Prompt if user wants to add another rule right away
         print("\nDo you want to add another rule?")
         more = get_valid_menu_choice(["y", "n"])
         if more.lower() == "n":
@@ -123,13 +140,13 @@ def add_business_rules(rules: list[dict]) -> list[dict]:
 
 
 def delete_single_rule(rules: list[dict]) -> list[dict]:
-    """Allows user to select and delete a specific rule by number."""
+    """Safely removes an existing rule by index."""
     if not rules:
         display_message("\n  [i] No rules available to delete.")
         return rules
 
     display_current_rules(rules)
-    print("\nEnter the rule number you want to remove (or '0' to cancel):")
+    print("\nEnter rule number to remove (or '0' to cancel):")
 
     valid_choices = [str(i) for i in range(len(rules) + 1)]
     choice = get_valid_menu_choice(valid_choices)
@@ -138,13 +155,17 @@ def delete_single_rule(rules: list[dict]) -> list[dict]:
         display_message("Deletion cancelled.")
         return rules
 
-    removed_rule = rules.pop(int(choice) - 1)
-    display_success(f"Removed Rule: '{removed_rule['text']}'")
+    try:
+        removed_rule = rules.pop(int(choice) - 1)
+        display_success(f"Removed Rule: '{removed_rule.get('text', '')}'")
+    except IndexError:
+        display_error("Selected rule index out of range.")
+
     return rules
 
 
 def manage_business_rules(existing_rules: list[dict]) -> list[dict]:
-    """Sub-menu dashboard to view, add, delete, or clear business rules."""
+    """Sub-menu interface for viewing, adding, and clearing rules."""
     rules = list(existing_rules)
 
     while True:
@@ -163,80 +184,91 @@ def manage_business_rules(existing_rules: list[dict]) -> list[dict]:
 
         if sub_choice == "1":
             display_current_rules(rules)
-
         elif sub_choice == "2":
             rules = add_business_rules(rules)
-
         elif sub_choice == "3":
             rules = delete_single_rule(rules)
-
         elif sub_choice == "4":
             if not rules:
                 display_message("\n  [i] Rules list is already empty.")
                 continue
-
             print("\nAre you sure you want to clear all rules?")
-            confirm = get_valid_menu_choice(["y", "n"])
-            if confirm == "y":
+            if get_valid_menu_choice(["y", "n"]) == "y":
                 rules.clear()
                 display_success("All business rules cleared.")
-
         elif sub_choice == "5":
             return rules
 
 
-def get_valid_pdf_directory() -> str:
-    """Gets folder path for PDF resumes.
+# =====================================================================
+# DIRECTORY & CANDIDATE LIMIT SELECTION
+# =====================================================================
 
-    Defaults to 'resumes' if empty (helps with Docker), cleans up drag-and-drop
-    paths, and checks if the folder actually has .pdf files.
+
+def scan_pdf_count(folder_path: str) -> tuple[bool, int, str]:
+    """Safely checks a folder and counts PDF files inside.
+
+    Returns: (is_accessible, pdf_count, error_message)
     """
-    print("\n--- RESUME FOLDER SELECTION ---")
-    print("Tip: Place your PDF resumes inside the 'resumes' folder,")
-    print("     or press ENTER to use the default 'resumes' directory.\n")
+    if not os.path.exists(folder_path):
+        return False, 0, f"Path '{folder_path}' does not exist."
+    if not os.path.isdir(folder_path):
+        return False, 0, f"Path '{folder_path}' is a file, not a directory."
+
+    try:
+        entries = os.listdir(folder_path)
+    except PermissionError:
+        return False, 0, f"Permission denied accessing '{folder_path}'."
+    except OSError as e:
+        return False, 0, f"Operating system error reading '{folder_path}': {e}"
+
+    pdf_files = [f for f in entries if f.lower().endswith(".pdf")]
+    return True, len(pdf_files), ""
+
+
+def get_valid_pdf_directory() -> str:
+    """Validates host resume directories against path and permission errors."""
+    print("\n--- STEP 1: RESUME FOLDER SELECTION ---")
+    print("Tip: Press ENTER to use the default 'resumes' directory.\n")
 
     while True:
-        folder_path = input("Enter directory path [Default: resumes]: ").strip()
+        folder_path = safe_input("Enter directory path [Default: resumes]: ").strip()
 
-        # Fallback to default directory if user just hits enter
         if not folder_path:
             folder_path = "resumes"
 
-        # Fix formatting issues if user drags & drops a folder directly into the terminal
+        # Sanitize pasted shell paths
         folder_path = folder_path.strip("'\"").replace("\\ ", " ")
 
-        if not os.path.exists(folder_path):
-            display_error(f"Path '{folder_path}' does not exist.")
-        elif not os.path.isdir(folder_path):
-            display_error(f"Path '{folder_path}' is a file, not a directory.")
-        else:
-            pdf_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".pdf")]
-            if not pdf_files:
-                display_error(f"No PDF files (.pdf) found in '{folder_path}'.")
-            else:
-                display_success(f"Found {len(pdf_files)} PDF resume(s) in '{folder_path}'.")
-                return folder_path
+        is_valid, pdf_count, err_msg = scan_pdf_count(folder_path)
+
+        if not is_valid:
+            display_error(err_msg)
+            continue
+
+        if pdf_count == 0:
+            display_error(f"No PDF files (.pdf) found in '{folder_path}'.")
+            continue
+
+        display_success(f"Found {pdf_count} PDF resume(s) in '{folder_path}'.")
+        return folder_path
 
 
 def get_valid_top_n_candidates(max_available: int = None) -> int:
-    """Gets the top N candidates count from the user.
-
-    Ensures it's a valid integer > 0 and caps it if the requested count
-    exceeds total available PDFs found.
-    """
+    """Validates top N input against non-integers, zeros, and upper boundaries."""
+    print("\n--- STEP 2: CANDIDATE OUTPUT LIMIT ---")
     while True:
-        user_input = input("\nHow many top candidates should be returned (e.g., 3, 5, 10)? ").strip()
+        raw_val = safe_input("How many top candidates to return (e.g., 3, 5)? ").strip()
 
-        if not user_input.isdigit():
-            display_error("Invalid input. Enter a positive whole number.")
+        if not raw_val.isdigit():
+            display_error("Invalid input. Please enter a positive integer.")
             continue
 
-        count = int(user_input)
+        count = int(raw_val)
         if count <= 0:
-            display_error("Number must be at least 1.")
+            display_error("Limit must be at least 1.")
             continue
 
-        # Automatically cap count so we don't request more candidates than we have PDFs
         if max_available and count > max_available:
             display_message(f"  [*] Notice: Only {max_available} PDF(s) available. Capping limit to {max_available}.")
             return max_available
@@ -245,33 +277,46 @@ def get_valid_top_n_candidates(max_available: int = None) -> int:
 
 
 def configure_resumes_and_limit() -> tuple[str, int]:
-    """Sequentially prompts for resume directory, then immediately prompts
-
-    for the candidate limit based on the number of PDFs found.
-    """
+    """Coordinates directory and candidate limit selection."""
     folder = get_valid_pdf_directory()
-
-    # Determine available PDFs in chosen directory to enforce realistic upper bound
-    pdf_files = [f for f in os.listdir(folder) if f.lower().endswith(".pdf")]
-    limit = get_valid_top_n_candidates(max_available=len(pdf_files))
-
-    display_success(f"Configured directory '{folder}' with candidate limit of {limit}.")
+    _, pdf_count, _ = scan_pdf_count(folder)
+    limit = get_valid_top_n_candidates(max_available=pdf_count)
+    display_success(f"Configured folder '{folder}' with candidate limit of {limit}.")
     return folder, limit
 
 
 # =====================================================================
-# RESULTS DISPLAY (LOGIC MANAGER OUTPUT)
+# RESULTS DISPLAY & FILE RECOVERY
 # =====================================================================
 
+
+def find_results_file(target_file: str = None) -> str | None:
+    """Resolves any existing results JSON file in the project workspace."""
+    if target_file and os.path.isfile(target_file):
+        return target_file
+
+    common_names = ["filtered_resume.json", "results.json", "ranked_resumes.json"]
+    for filename in common_names:
+        if os.path.isfile(filename):
+            return filename
+
+    # Fallback to the latest modified JSON file
+    all_json_files = glob.glob("*.json")
+    if all_json_files:
+        try:
+            return max(all_json_files, key=os.path.getmtime)
+        except OSError:
+            return None
+
+    return None
+
+
 def display_screening_results(ranked_candidates: list[dict], top_n: int = None) -> None:
-    """Takes ranked candidate records and displays a clean CLI leaderboard.
-    Optionally slices output to top_n candidates.
-    """
-    if not ranked_candidates:
-        display_message("\n  [i] No ranked candidates to display.")
+    """Renders candidate records cleanly, guarding against missing keys or invalid types."""
+    if not isinstance(ranked_candidates, list) or not ranked_candidates:
+        display_message("\n  [i] No candidate results available to display.")
         return
 
-    # Slice list if top_n is specified
     display_list = ranked_candidates[:top_n] if top_n else ranked_candidates
 
     print("\n" + "=" * 75)
@@ -279,112 +324,94 @@ def display_screening_results(ranked_candidates: list[dict], top_n: int = None) 
     print("=" * 75)
 
     for idx, candidate in enumerate(display_list, start=1):
+        if not isinstance(candidate, dict):
+            continue
+
         rank = candidate.get("rank", idx)
-        name = candidate.get("name", "").strip() or candidate.get("file", "Unknown Candidate")
-        
-        score = candidate.get("score")
-        if score is not None:
-            score_str = f"{score:.1f}%"
+
+        # Name fallback: name -> filename -> placeholder
+        name = candidate.get("name") or candidate.get("file") or "Unknown Candidate"
+        if not str(name).strip():
+            name = candidate.get("file", "Unknown Candidate")
+
+        # Defensive score formatting
+        raw_score = candidate.get("score")
+        if raw_score is not None:
+            try:
+                score_str = f"{float(raw_score):.1f}%"
+            except (ValueError, TypeError):
+                score_str = str(raw_score)
         else:
             outcome = candidate.get("outcome", "disqualified")
             score_str = f"N/A ({outcome})"
 
         reason = candidate.get("reason", "No evaluation summary provided.")
 
-        print(f"\n  [Rank #{rank}]  {name}")
+        print(f"\n  [Rank #{rank}]  {str(name).strip()}")
         print(f"      Score  : {score_str}")
         print(f"      Reason : {reason}")
 
     print("\n" + "-" * 75)
-    print("  [*] Full details (contact, skills, experience) saved to results.json")
+    print("  [*] Note: Complete details saved to JSON output file")
     print("=" * 75 + "\n")
 
 
-def find_results_file(target_file: str = None) -> str | None:
-    """Finds a valid results JSON file without requiring a strict filename.
+def view_saved_results(file_path: str = None, top_n: int = None) -> None:
+    """Reads and parses saved JSON output with protection against corruption."""
+    target = find_results_file(file_path)
 
-    Checks:
-    1. An explicitly provided path (if given).
-    2. Common names ('filtered_resume.json', 'results.json', 'ranked_resumes.json').
-    3. The most recently modified .json file in the working directory.
-    """
-    # 1. Check explicit name if supplied
-    if target_file and os.path.exists(target_file):
-        return target_file
-
-    # 2. Check standard teammate convention names
-    common_names = [
-        "filtered_resume.json",
-        "results.json",
-        "ranked_resumes.json",
-    ]
-    for filename in common_names:
-        if os.path.exists(filename):
-            return filename
-
-    # 3. Find any .json files in the project root (excluding system/git files)
-    json_files = glob.glob("*.json")
-    if json_files:
-        # Sort by most recently modified first
-        newest_file = max(json_files, key=os.path.getmtime)
-        return newest_file
-
-    return None
-
-
-def view_saved_results(
-    file_path: str = None, top_n: int = None
-) -> None:
-    """Locates any available results JSON file and displays candidate rankings."""
-    detected_file = find_results_file(file_path)
-
-    if not detected_file:
-        display_error(
-            "No results file found (e.g., 'filtered_resume.json' or"
-            " 'results.json').\nPlease run screening first (Option 3)."
-        )
+    if not target:
+        display_error("No results JSON file found. Please run screening first (Option 3).")
         return
 
-    display_message(f"\n  [i] Loading results from '{detected_file}'...")
+    # Check for empty file
+    try:
+        if os.path.getsize(target) == 0:
+            display_error(f"'{target}' is empty. Re-run screening to generate output.")
+            return
+    except OSError as e:
+        display_error(f"Failed to check file size for '{target}': {e}")
+        return
+
+    display_message(f"\n  [i] Reading results from '{target}'...")
 
     try:
-        with open(detected_file, "r", encoding="utf-8") as f:
+        with open(target, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         if not isinstance(data, list):
-            display_error(
-                f"'{detected_file}' does not contain a valid candidate list."
-            )
+            display_error(f"'{target}' contains invalid data structure (expected JSON array).")
             return
 
         display_screening_results(data, top_n=top_n)
 
-    except json.JSONDecodeError:
-        display_error(
-            f"Could not parse '{detected_file}'. File appears damaged or"
-            " incomplete."
-        )
+    except json.JSONDecodeError as err:
+        display_error(f"Corrupted JSON in '{target}': {err.msg} (line {err.lineno})")
+    except PermissionError:
+        display_error(f"Permission denied reading '{target}'.")
     except Exception as e:
-        display_error(f"Failed to read results: {e}")
+        display_error(f"Unexpected error while opening '{target}': {e}")
+
 
 # =====================================================================
-# AGGREGATOR FUNCTION FOR EXTERNAL MANAGERS
+# AGGREGATOR FUNCTION FOR EXTERNAL MANAGERS (MENU DRIVEN)
 # =====================================================================
 
 
 def get_employer_inputs() -> dict:
-    """Displays the main interactive configuration menu."""
+    """Interactive menu dashboard enforcing prerequisite guards before pipeline handoff."""
     config = {
-        "business_rules": [],       # Stores list of rule dicts: [{"text": ..., "priority": ...}]
-        "pdf_directory": "resumes",  # Default directory
-        "top_n": 3                   # Default limit
+        "business_rules": [],
+        "pdf_directory": "resumes",
+        "top_n": 3
     }
 
     while True:
-        if config["business_rules"]:
-            rules_status = f"{len(config['business_rules'])} Rule(s) Configured"
-        else:
-            rules_status = "NOT SET (Required)"
+        rules_status = (
+            f"{len(config['business_rules'])} Rule(s) Configured"
+            if config["business_rules"]
+            else "NOT SET (Required)"
+        )
 
         print("\n=============================================")
         print("          RESUME SCREENER SETUP MENU         ")
@@ -392,7 +419,7 @@ def get_employer_inputs() -> dict:
         print(f"1. Manage Business Rules Criteria [{rules_status}]")
         print(f"2. Configure Resumes & Limit      [Folder: '{config['pdf_directory']}', Limit: {config['top_n']}]")
         print("3. Proceed to Resume Screening")
-        print("4. View Screening Results (from results.json)")
+        print("4. View Screening Results (from JSON)")
         print("5. Exit Application")
         print("=============================================")
 
@@ -411,37 +438,36 @@ def get_employer_inputs() -> dict:
                 display_error("You must configure at least one Business Rule (Option 1) before starting!")
                 continue
 
-            if not os.path.exists(config["pdf_directory"]):
-                display_error(f"Selected directory '{config['pdf_directory']}' does not exist. Please update Option 2.")
+            is_valid, pdf_count, err_msg = scan_pdf_count(config["pdf_directory"])
+            if not is_valid:
+                display_error(f"{err_msg} Update folder via Option 2.")
                 continue
 
-            pdf_files = [f for f in os.listdir(config["pdf_directory"]) if f.lower().endswith(".pdf")]
-            if not pdf_files:
-                display_error(f"No PDF resumes found in '{config['pdf_directory']}'. Add PDFs or pick another folder (Option 2).")
+            if pdf_count == 0:
+                display_error(f"No PDFs found in '{config['pdf_directory']}'. Update via Option 2.")
                 continue
 
-            if config["top_n"] > len(pdf_files):
-                display_message(f"  [*] Notice: Capping candidate limit from {config['top_n']} to total available ({len(pdf_files)}).")
-                config["top_n"] = len(pdf_files)
+            if config["top_n"] > pdf_count:
+                display_message(f"  [*] Notice: Capping candidate limit from {config['top_n']} to available ({pdf_count}).")
+                config["top_n"] = pdf_count
 
-            display_success("Configuration complete! Handing off to main pipeline...\n")
+            display_success("Configuration verified! Handing off to main pipeline...\n")
             return config
 
         elif choice == "4":
-            # Passing file_path=None lets find_results_file() automatically pick up whatever JSON exists
             view_saved_results(file_path=None, top_n=config["top_n"])
 
         elif choice == "5":
             display_message("\nExiting Resume Screener. Goodbye!")
             sys.exit(0)
 
+
 # =====================================================================
 # LOCAL STANDALONE TEST
 # =====================================================================
 
 if __name__ == "__main__":
-    # Quick sanity check when running io_manager.py directly
-    display_message("=== TESTING I/O MANAGER IMPORTABLE FUNCTIONS ===")
+    display_message("=== TESTING I/O MANAGER INTERACTIVE MENU ===")
     inputs = get_employer_inputs()
     display_message("\n--- RETURNED DICTIONARY FOR OTHER MANAGERS ---")
     display_message(str(inputs))
