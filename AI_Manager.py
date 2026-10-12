@@ -26,7 +26,7 @@ COMBINED_PROMPT = ChatPromptTemplate.from_messages([
      "You are an impartial resume screening assistant. Today is {today}.\n"
      "Analyze the given document and perform three tasks:\n"
      "1. Identify document_type: 'resume', 'job_description', 'guide_or_sample', or 'other'. "
-     "If it is NOT a resume, set rules_check to [] and candidate_info to null.\n"
+     "If it is NOT a resume, set checks to [] and candidate_info to null.\n"
      "2. If it is a resume, check it ONLY against the provided numbered rules. "
      "Do not infer or guess. For evidence, quote exact text from the resume or use \"\".\n"
      "3. Extract key details into candidate_info (ignore personal attributes like age/gender/ethnicity).\n\n"
@@ -235,16 +235,25 @@ def screen_one(rules: list[dict], resume: dict) -> dict:
         prompt = COMBINED_PROMPT.invoke({"today": today, "rules": rules_text, "resume": resume["text"]})
         result = json.loads(get_llm().invoke(prompt).content)
         
-        doc_type = result.get("document_type", "").lower()
+        # "or" swaps a missing / null value for a safe default, so null never crashes the program
+        doc_type = str(result.get("document_type") or "unknown").lower()
         if doc_type != "resume":
             resume["status"] = "invalid"
-            resume["reason"] = f"Not a resume ({doc_type}): {result.get('doc_type_reason', '')}"
+            resume["reason"] = f"Not a resume ({doc_type}): {result.get('doc_type_reason') or ''}"
             entry["outcome"] = "invalid"
             entry["reason"] = resume["reason"]
             return entry
 
-        # Rules Check & Scoring
-        outcome = score_resume(rules, result.get("checks", []), resume["text"])
+        # Rules Check & Scoring (no checks at all means the AI skipped the rules, so the score can't be trusted)
+        checks = result.get("checks")
+        if not isinstance(checks, list):
+            resume["status"] = "invalid"
+            resume["reason"] = "The AI's reply did not include the rule checks."
+            entry["outcome"] = "invalid"
+            entry["reason"] = resume["reason"]
+            return entry
+
+        outcome = score_resume(rules, checks, resume["text"])
         entry["reason"] = outcome["reason"]
 
         if outcome["rejected_by"]:
@@ -254,22 +263,27 @@ def screen_one(rules: list[dict], resume: dict) -> dict:
             entry["score"] = outcome["score"]
 
             # Extract Info Validation
-            info = result.get("candidate_info", {}) or {}
+            info = result.get("candidate_info") or {}
+            if not isinstance(info, dict):
+                info = {}
+
             for field in ["name", "email", "phone"]:
-                val = str(info.get(field, ""))
+                val = str(info.get(field) or "")      # null becomes "" (not the text "None")
                 if contains_text(val, resume["text"]):
                     entry[field] = val
 
-            entry["summary"] = str(info.get("summary", ""))
-            
-            # Categories with deduplication & skill validation
-            for cat in ["qualifications", "work_experience", "projects"]:
-                entry[cat] = [str(x) for x in info.get(cat, []) if isinstance(x, (str, int))]
-            
-            entry["skills"] = [
-                str(s) for s in info.get("skills", []) 
-                if isinstance(s, str) and contains_text(s, resume["text"])
-            ]
+            entry["summary"] = str(info.get("summary") or "")
+
+            # Categories: a null or non-list value becomes an empty list instead of crashing
+            for cat in ["qualifications", "work_experience", "projects", "skills"]:
+                items = info.get(cat) or []
+                if not isinstance(items, list):
+                    items = []
+                if cat == "skills":
+                    # Only keep skills that really appear in the resume
+                    entry[cat] = [str(s) for s in items if isinstance(s, str) and contains_text(s, resume["text"])]
+                else:
+                    entry[cat] = [str(x) for x in items if isinstance(x, (str, int))]
 
     except Exception as error:
         resume["status"] = "invalid"
