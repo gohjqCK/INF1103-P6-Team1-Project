@@ -69,7 +69,7 @@ def parse_resumes(folder: str = "data", output_file: str = "resumes.json") -> li
     return save_resumes(resumes, output_file)
 
 #outputs filtered resumes to json file
-def outputfile_func(accepted, rejected, invalid):
+def outputfile_func(accepted, rejected, invalid, output_folder="."):
     keyname=["accepted","rejected","invalid"]
     overall_resume=[accepted,rejected,invalid]
     resume_catogerised_list=[]
