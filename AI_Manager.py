@@ -281,5 +281,5 @@ if __name__ == "__main__":
             {"text": "Has a criminal record", "priority": "reject"},
         ]
         rules = add_keywords(rules)
-        resumes = parse_resumes("data_test", "resumes.json")
+        resumes = parse_resumes("data", "resumes.json")
         screen_resumes(rules, resumes, "resumes.json", "results.json", max_workers=4)
