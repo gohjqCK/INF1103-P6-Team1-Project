@@ -16,7 +16,7 @@ def main():
     rules = config["business_rules"]
     pdf_directory = config["pdf_directory"]
     top_n = config["top_n"]
-    output_directory = config.get("output_directory", "output")
+    output_directory = config["output_directory"]
     rerun = False
 
     while True:
@@ -26,7 +26,7 @@ def main():
             rules = config["business_rules"]
             pdf_directory = config["pdf_directory"]
             top_n = config["top_n"]
-            output_directory = config.get("output_directory", "output")
+            output_directory = config["output_directory"]
 
         IO_manager.display_message("\n[1/4] Generating AI prompt from business rules")
         rules = AI_Manager.add_keywords(rules)
@@ -73,7 +73,7 @@ def main():
 
             IO_manager.display_success("Offline screening complete")
             IO_manager.display_screening_results(sorted_resume, top_n=top_n)
-            return
+            rerun = True
         
 
 if __name__ == "__main__":
