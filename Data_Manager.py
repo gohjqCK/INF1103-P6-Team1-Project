@@ -2,6 +2,7 @@
 import json
 import logging
 from pathlib import Path
+from datetime import datetime
 
 from pypdf import PdfReader
 
@@ -68,8 +69,15 @@ def parse_resumes(folder: str = "data", output_file: str = "resumes.json") -> li
     # 4. Save as JSON: valid resumes first, invalid ones at the bottom
     return save_resumes(resumes, output_file)
 
+#date time format
+def date_time_format_func():
+    dt = datetime.now()
+
+    time_string = dt.strftime("%Y-%m-%d %H-%M-%S")
+    return time_string 
+
 #outputs filtered resumes to json file
-def outputfile_func(accepted, rejected, invalid, output_folder="."):
+def outputfile_func(accepted, rejected, invalid):
     keyname=["accepted","rejected","invalid"]
     overall_resume=[accepted,rejected,invalid]
     resume_catogerised_list=[]
