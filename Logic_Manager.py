@@ -205,5 +205,4 @@ else:
                     rejected_resume=output_result[1]
                     invalid_resume=output_result[2]
                     sorted_resume= sort_resume_func(accepted_resume)
-                    outputfile_func(accepted_resume, rejected_resume, invalid_resume)
                     print_success()

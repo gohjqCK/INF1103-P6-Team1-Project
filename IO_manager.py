@@ -317,7 +317,7 @@ def display_screening_results(ranked_candidates: list[dict], top_n: int = None) 
         display_message("\n  [i] No candidate results available to display.")
         return
 
-    display_list = ranked_candidates[:top_n] if top_n else ranked_candidates
+    display_list = ranked_candidates[0].get("accepted", ranked_candidates) if isinstance(ranked_candidates[0], dict) else ranked_candidates
 
     print("\n" + "=" * 75)
     print("                       TOP RANKED CANDIDATES")
@@ -398,9 +398,9 @@ def view_saved_results(file_path: str = None, top_n: int = None) -> None:
 # =====================================================================
 
 
-def get_employer_inputs() -> dict:
+def get_employer_inputs(rerun:dict = None) -> dict:
     """Interactive menu dashboard enforcing prerequisite guards before pipeline handoff."""
-    config = {
+    config = rerun if rerun else {
         "business_rules": [],
         "pdf_directory": "resumes",
         "top_n": 3
