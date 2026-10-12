@@ -16,12 +16,17 @@ def main():
     rules = config["business_rules"]
     pdf_directory = config["pdf_directory"]
     top_n = config["top_n"]
+    output_directory = config.get("output_directory", "output")
     rerun = False
 
     while True:
         if rerun == True:
             input("\nScreening complete, press any key to return to menu")
-            IO_manager.get_employer_inputs(config)
+            config = IO_manager.get_employer_inputs(config)
+            rules = config["business_rules"]
+            pdf_directory = config["pdf_directory"]
+            top_n = config["top_n"]
+            output_directory = config.get("output_directory", "output")
 
         IO_manager.display_message("\n[1/4] Generating AI prompt from business rules")
         rules = AI_Manager.add_keywords(rules)
@@ -45,7 +50,7 @@ def main():
 
             if Logic_Manager.validate_resume_func(data) == 0 and Logic_Manager.validate_resume_keys_func(data) == 0:      
                 accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
-                Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume)
+                Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume, output_folder=output_directory)
                 sorted_resume = Logic_Manager.sort_resume_func(accepted_resume)
 
                 IO_manager.display_success("Resumes successfully screened")

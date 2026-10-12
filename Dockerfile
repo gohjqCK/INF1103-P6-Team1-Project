@@ -11,7 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     OLLAMA_HOST=http://host.docker.internal:11434 \
-    ANONYMIZED_TELEMETRY=False
+    ANONYMIZED_TELEMETRY=False \
+    TZ=Asia/Singapore
 
 # The program code lives in /app
 WORKDIR /app
