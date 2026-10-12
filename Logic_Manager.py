@@ -3,18 +3,10 @@ import copy
 import json
 from json.decoder import JSONDecodeError
 from pathlib import Path
-from datetime import datetime
 
 '''===========Logic_Manager Rules:=================
     variable resume only used in for loops
     _func are functions to be called'''
-
-#date time format
-def date_time_format_func():
-    dt = datetime.now()
-
-    time_string = dt.strftime("%Y-%m-%d %H-%M-%S")
-    return time_string 
 
 #prints error detected
 def print_err_detected():
@@ -108,18 +100,6 @@ def sort_resume_func(resume_list):
     sorted_scores=sort_score_func(score_list)
     sorted_resume_list=link_score_to_list_func(sorted_scores, resume_list)
     return sorted_resume_list
-
-def outputfile_func(accepted, rejected, invalid):
-    keyname=["accepted","rejected","invalid"]
-    overall_resume=[accepted,rejected,invalid]
-    resume_catogerised_list=[]
-    filename= "filtered_resume_"+str(date_time_format_func())+".json"
-    for index in range(3):
-        dictionary_variable={}
-        dictionary_variable[keyname[index]]=overall_resume[index]
-        resume_catogerised_list.append(dictionary_variable)
-    with open(filename,"w", encoding="utf-8") as file:
-            json.dump(resume_catogerised_list,file, ensure_ascii=False, indent=4)
 
 
 #Extract scores of resumes
@@ -225,5 +205,4 @@ else:
                     rejected_resume=output_result[1]
                     invalid_resume=output_result[2]
                     sorted_resume= sort_resume_func(accepted_resume)
-                    outputfile_func(accepted_resume, rejected_resume, invalid_resume)
                     print_success()
