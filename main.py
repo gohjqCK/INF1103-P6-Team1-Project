@@ -38,11 +38,9 @@ def main():
             data = json.load(f)
 
         if Logic_Manager.validate_resume_func(data) == 0 and Logic_Manager.validate_resume_keys_func(data) == 0:      
-            filtered_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
-            timestamp = Logic_Manager.date_time_format_func()
-            Logic_Manager.outputfile_func(rejected_resume, f"rejected_resume_{timestamp}.json")
-            Logic_Manager.outputfile_func(invalid_resume, f"invalid_resume_{timestamp}.json")
-            sorted_resume = Logic_Manager.sort_resume_func(filtered_resume)
+            accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
+            Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume)
+            sorted_resume = Logic_Manager.sort_resume_func(accepted_resume)
 
             IO_manager.display_success("Resumes successfully screened")
             IO_manager.display_screening_results(sorted_resume, top_n=top_n)

@@ -225,3 +225,4 @@ TYPICAL DAILY WORKFLOW
 5. python main.py                    run and test the app
 6. git add / git commit / git push   save and share your work
 7. docker compose down               stop Ollama when finished
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
