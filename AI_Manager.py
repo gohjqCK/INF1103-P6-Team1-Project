@@ -309,7 +309,7 @@ def screen_resumes(rules: list[dict], resumes: list[dict],
         
         for future in as_completed(future_to_resume):
             entry = future.result()
-            print(f"[{entry['file']}] -> {entry['outcome'].upper()}: {entry['reason']}")
+            print(f"[{entry['file']}] -> Scored:{entry['score']}. Reason: {entry['reason']}")
             
             if entry["outcome"] == "scored":
                 scored.append(entry)
