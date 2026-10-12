@@ -7,7 +7,7 @@ PREREQUISITES (install once)
   - Python 3.10 or newer   https://www.python.org   (for the local venv, steps 3-6)
   - Docker Desktop         https://www.docker.com/products/docker-desktop
                            Open it and wait for "Engine running" before step 7
-  - ~7 GB free disk space  qwen2.5:7b ~4.7 GB + nomic-embed-text ~0.3 GB + app image ~1 GB
+  - ~5.5 GB free disk space qwen2.5:7b ~4.7 GB + app image ~0.3 GB
   - 16 GB RAM recommended  the AI model uses ~5.5 GB while running (no graphics card needed)
 
 STEP-BY-STEP (run in PowerShell / VS Code terminal)
@@ -22,7 +22,7 @@ STEP-BY-STEP (run in PowerShell / VS Code terminal)
  4. .venv\Scripts\Activate.ps1            # activate it - prompt starts with (.venv); redo in every new terminal
                                           #   "running scripts is disabled" error? run once:
                                           #   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
- 5. pip install -r requirements.txt       # install the project's packages into the venv (~100 packages)
+ 5. pip install -r requirements.txt       # install the project's packages into the venv (~36 packages)
  6. VS Code: Ctrl+Shift+P > "Python: Select Interpreter" > choose the one with ('.venv')
                                           # removes "Import could not be resolved" warnings
                                           #   not listed? "Enter interpreter path..." > .venv\Scripts\python.exe
@@ -32,12 +32,10 @@ STEP-BY-STEP (run in PowerShell / VS Code terminal)
  8. docker compose ps                     # check: "ollama" should show STATUS "Up"
  9. docker compose exec ollama ollama pull qwen2.5:7b
                                           # download the AI model (~4.7 GB, first time only - it is kept after)
-    docker compose exec ollama ollama pull nomic-embed-text
-                                          # download the embedding model used by ChromaDB (~270 MB, first time only)
 10. docker compose exec ollama ollama list
-                                          # check: "qwen2.5:7b" AND "nomic-embed-text:latest" are listed
+                                          # check: "qwen2.5:7b" is listed
 11. docker build -t resume-cli .          # build the app image - installs requirements.txt INSIDE it
-                                          #   (first build ~1-2 min; rebuild after ANY code change)
+                                          #   (first build ~1 min; rebuild after ANY code change)
 12. docker run -it --rm -v "${PWD}:/work" resume-cli
                                           # run the app (interactive menu), connected to the Ollama container
                                           #   -it      : needed - the app asks you questions
@@ -155,9 +153,6 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 docker compose exec ollama ollama pull qwen2.5:7b
     Download the Qwen 2.5 7B AI model (~4.7GB) inside the container. Only needed once
     (the ollama_storage volume keeps it).
-
-docker compose exec ollama ollama pull nomic-embed-text
-    Download the embedding model used for ChromaDB / RAG. Only needed once.
 
 docker compose exec ollama ollama list
     List the models already downloaded.
