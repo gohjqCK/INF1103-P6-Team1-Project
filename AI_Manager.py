@@ -10,7 +10,7 @@ import ollama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
 
-from Data_Manager import EMBED_MODEL, parse_resumes, save_resumes
+from Data_Manager import parse_resumes, save_resumes
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
@@ -43,12 +43,21 @@ COMBINED_PROMPT = ChatPromptTemplate.from_messages([
     ("human", "Rules:\n{rules}\n\nDocument:\n{resume}"),
 ])
 
-KEYWORD_BATCH_PROMPT = ChatPromptTemplate.from_messages([
+KEYWORD_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
-     "For each rule, list 3 to 12 concise keywords (tech, tools, specific terms) that would appear in a resume matching it. "
-     "Exclude generic words like experience, skills, knowledge. "
-     "Reply strictly in JSON: {{\n  \"1\": [\"kw1\", \"kw2\"],\n  \"2\": [\"kw1\", \"kw2\"]\n}}"),
-    ("human", "Rules:\n{rules}"),
+     "You help a hiring team check resumes against their rules. "
+     "For the rule given, list 3 to 12 SHORT keywords (one or two words each) that a sentence from a resume "
+     "would contain if it is about this rule. Include:\n"
+     "- the main word and its other forms (singular, plural, -ing)\n"
+     "- abbreviations and their full names\n"
+     "- well-known products, tools or vendors that clearly prove the rule\n"
+     "Do not include general words such as experience, years, skills, has, knowledge or certification.\n"
+     'Example: for the rule "Knows relational databases" the keywords could be '
+     '["database", "databases", "SQL", "MySQL", "PostgreSQL", "Oracle", "SQL Server"].\n'
+     "If the rule is too general to check with specific words, give an empty list.\n"
+     "Reply ONLY with JSON in exactly this format: "
+     '{{"keywords": ["<keyword>", "..."]}}'),
+    ("human", "Rule: {rule}"),
 ])
 
 
@@ -60,10 +69,9 @@ def check_connection() -> bool:
         print(f"Cannot reach Ollama at {OLLAMA_HOST}.")
         return False
 
-    for model in [MODEL_NAME, EMBED_MODEL]:
-        if model not in downloaded and model + ":latest" not in downloaded:
-            print(f"Model '{model}' is not downloaded.")
-            return False
+    if MODEL_NAME not in downloaded and MODEL_NAME + ":latest" not in downloaded:
+        print(f"Model '{MODEL_NAME}' is not downloaded.")
+        return False
     return True
 
 
@@ -112,21 +120,53 @@ def evidence_is_valid(evidence: str, resume_text: str, keywords: list[str]) -> b
     return True
 
 
-# --- Batch Processing Keywords ---
+# --- Rule Keywords ---
 
 def add_keywords(rules: list[dict]) -> list[dict]:
-    rules_text = "\n".join(f"{i+1}. {r['text']}" for i, r in enumerate(rules))
-    try:
-        prompt = KEYWORD_BATCH_PROMPT.invoke({"rules": rules_text})
-        suggested = json.loads(get_llm().invoke(prompt).content)
-    except Exception:
-        suggested = {}
+    """Ask the AI for keywords for each rule (one small call per rule), clean them, and add other word forms."""
+    for rule in rules:
+        # 1. Ask the AI for this rule's keywords
+        try:
+            prompt = KEYWORD_PROMPT.invoke({"rule": rule["text"]})
+            suggested = json.loads(get_llm().invoke(prompt).content).get("keywords", [])
+        except Exception:
+            suggested = []      # no keywords: this rule falls back to the quote check only
+        if not isinstance(suggested, list):
+            suggested = []
 
-    for idx, rule in enumerate(rules, 1):
-        raw_kws = suggested.get(str(idx), [])
-        kws = [w.strip() for w in raw_kws if w.strip().lower() not in GENERAL_WORDS]
-        rule["keywords"] = list(set(kws))
-        print(f"Keywords for '{rule['text']}': {', '.join(rule['keywords']) if rule['keywords'] else '(quote check only)'}")
+        # 2. Clean the list: keep a keyword only if it has a useful word (not just "2 years")
+        keywords = []
+        for word in suggested:
+            word = str(word).strip()
+            useful = []
+            for part in word.lower().split():
+                if not part.isdigit() and part not in GENERAL_WORDS:
+                    useful.append(part)
+            if len(useful) > 0 and word not in keywords:
+                keywords.append(word)
+
+        # 3. Add other forms of lower-case single words, e.g. "networking" -> "network", "networks"
+        forms = []
+        for word in keywords:
+            if word.islower() and " " not in word and len(word) >= 4:
+                if word.endswith("ing"):
+                    forms.append(word[:-3])
+                    forms.append(word[:-3] + "s")
+                elif word.endswith("s"):
+                    forms.append(word[:-1])
+                else:
+                    forms.append(word + "s")
+        for form in forms:
+            if form not in keywords:
+                keywords.append(form)
+
+        # 4. Save the keywords on the rule and show them
+        rule["keywords"] = keywords
+        if len(keywords) > 0:
+            print(f"Keywords for '{rule['text']}': " + ", ".join(keywords))
+        else:
+            print(f"Keywords for '{rule['text']}': (quote check only)")
+
     return rules
 
 
