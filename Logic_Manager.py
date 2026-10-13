@@ -175,3 +175,26 @@ def offline_screening_func(resume_list, rules):
             resume["score"] = 0.0
             resume["reason"] = "No rules matched"
     return resume_list
+
+
+def validateOfflineFile(results_path):
+    offlinefile=validate_file_exists_func(results_path)
+    if  offlinefile != 0:
+        return offlinefile
+    offlinefile=validate_file_type_func(results_path)
+    if  offlinefile!= 0:
+        return offlinefile
+    offlinefile=validate_file_empty_func(results_path)
+    if  offlinefile!= 0:
+        return offlinefile
+    with open(results_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    offlinedata=validate_resume_func(data)
+    if offlinedata != 0:
+        print(offlinedata)
+        return offlinedata
+    offlinedata=validate_resume_keys_func(data)
+    if offlinedata != "":
+        print(offlinedata)
+        return offlinedata
+    return 0

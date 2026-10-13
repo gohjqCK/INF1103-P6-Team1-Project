@@ -3,6 +3,7 @@ import glob
 import json
 import os
 import sys
+import Data_Manager
 
 # Singapore Standard Time (SGT = UTC+8)
 SGT_TIMEZONE = timezone(timedelta(hours=8))
@@ -603,8 +604,9 @@ def view_saved_results(file_path: str = None, top_n: int = None, output_dir: str
 
 def get_employer_inputs(rerun:dict = None) -> dict:
     """Interactive menu dashboard enforcing prerequisite guards before pipeline handoff."""
+    rules = Data_Manager.get_businessrules()
     config = rerun if rerun else {
-        "business_rules": [],
+        "business_rules": rules,
         "pdf_directory": "resumes",
         "top_n": 3,
         "output_directory": "output"
@@ -634,6 +636,7 @@ def get_employer_inputs(rerun:dict = None) -> dict:
 
         if choice == "1":
             config["business_rules"] = manage_business_rules(config["business_rules"])
+            Data_Manager.save_businessrules(config["business_rules"])
 
         elif choice == "2":
             folder, limit = configure_resumes_and_limit()

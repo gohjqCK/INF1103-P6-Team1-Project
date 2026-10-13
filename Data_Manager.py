@@ -93,3 +93,16 @@ def outputfile_func(accepted, rejected, invalid, output_folder="."):
         resume_catogerised_list.append(dictionary_variable)
     with open(filepath,"w", encoding="utf-8") as file:
             json.dump(resume_catogerised_list,file, ensure_ascii=False, indent=4)
+
+def save_businessrules(businessrules):
+    with open("Business_Rules.json", "w", encoding="utf-8") as f:
+        json.dump(businessrules, f, indent=4)
+
+def get_businessrules():
+    try:
+        with open("Business_Rules.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        with open("Business_Rules.json", "w", encoding="utf-8") as f:
+            json.dump([], f, indent=4)
+        return []
