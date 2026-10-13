@@ -6,6 +6,8 @@ import Data_Manager
 import IO_manager
 import Logic_Manager
 
+AI_OUTPUT_FILE = "ai_output.json"
+
 
 def main():
     if AI_Manager.check_connection() == False:
@@ -40,9 +42,9 @@ def main():
 
         IO_manager.display_message("\n[3/4] Screening resumes")
         if AI_Manager.check_connection() == True:
-            AI_Manager.screen_resumes(rules, resumes, resumes_file="resumes.json", results_file="results.json")
+            AI_Manager.screen_resumes(rules, resumes, resumes_file="resumes.json", results_file=AI_OUTPUT_FILE)
             IO_manager.display_message("\n[4/4] Validating and ranking results")
-            results_path = Path("results.json")
+            results_path = Path(AI_OUTPUT_FILE)
 
             if Logic_Manager.validate_file_exists_func(results_path) == 0 and Logic_Manager.validate_file_type_func(results_path) == 0 and Logic_Manager.validate_file_empty_func(results_path) == 0:
                 with open(results_path, "r", encoding="utf-8") as f:
