@@ -18,11 +18,11 @@ testfile1=Path("EmptyFile")
 output=Logic_Manager.validate_file_exists_func(testfile1)
 print(output+"\n")
 
-testfile2=Path("/Test_Script/Error_fileType.pdf")
+testfile2=Path("Test_Script/Error_fileType.pdf")
 output=Logic_Manager.validate_file_type_func(testfile2)
 print(output+"\n")
 
-testfile3=Path("/Test_Script/Error_Empty.json")
+testfile3=Path("Test_Script/Error_Empty.json")
 output=Logic_Manager.validate_file_empty_func(testfile3)
 print(output+"\n")
 

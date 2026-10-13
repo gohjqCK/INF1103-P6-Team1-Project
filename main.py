@@ -49,7 +49,8 @@ def main():
                 with open(results_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                if Logic_Manager.validate_resume_func(data) == 0 and Logic_Manager.validate_resume_keys_func(data) == 0:      
+                
+                if Logic_Manager.validate_resume_func(data) == 0 and Logic_Manager.validate_resume_keys_func(data) == "":      
                     accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
                     Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume, outDir)
                     sorted_resume = Logic_Manager.sort_resume_func(accepted_resume)
@@ -60,9 +61,11 @@ def main():
 
                 else:
                     IO_manager.display_error("Logic Manager detected invalid data types or missing keys in the JSON file")
+                    break
 
             else:
                 IO_manager.display_error("Logic Manager could not validate the JSON file")
+                break
 
         else:
             IO_manager.display_error("Cannot connect to Ollama or required models are missing.")
