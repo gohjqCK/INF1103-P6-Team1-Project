@@ -120,6 +120,12 @@ def evidence_is_valid(evidence: str, resume_text: str, keywords: list[str]) -> b
     return True
 
 
+def rule_text_in_resume(rule_text: str, resume_text: str) -> bool:
+    """True if the rule's own words appear in the resume, e.g. rule "Python" and "Skills: Bash, Python"."""
+    words = rule_text.strip()
+    return has_keyword(resume_text, [words, words + "s"])
+
+
 # --- Rule Keywords ---
 
 def add_keywords(rules: list[dict]) -> list[dict]:
@@ -183,6 +189,18 @@ def score_resume(rules: list[dict], checks: list[dict], resume_text: str) -> dic
                 shown.append(rule_id)
             else:
                 unproven.append(rule_id)
+
+    # Exact-words check: the AI sometimes says "no" even when the skill is written in the resume.
+    # Knockout ("reject") rules are skipped: "No criminal record" contains "criminal record".
+    for idx, rule in enumerate(rules, 1):
+        if rule["priority"] == "reject":
+            continue
+        if idx in shown:
+            continue
+        if rule_text_in_resume(rule["text"], resume_text):
+            shown.append(idx)
+            if idx in unproven:
+                unproven.remove(idx)
 
     earned, total, musts_missed = 0, 0, 0
     met, missed, rejected_by = [], [], []
