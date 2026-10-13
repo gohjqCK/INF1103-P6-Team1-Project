@@ -1,0 +1,12 @@
+[
+    {
+        "Value 1": "Hakim",
+        "score": 10.0,
+        "Missing": "Outcome"
+    },
+    {
+        "Value 2": "Chi Yang",
+        "outcome": "scored",
+        "missing": "score"
+    }
+]
