@@ -405,6 +405,8 @@ def display_screening_results(ranked_candidates: list[dict], top_n: int = None) 
         return
 
     display_list = ranked_candidates[0].get("accepted", ranked_candidates) if isinstance(ranked_candidates[0], dict) else ranked_candidates
+    if top_n is not None and isinstance(top_n, int):
+        display_list = display_list[:top_n]
 
     # Enforce top_n candidate limit if configured
     if top_n is not None and top_n > 0:
