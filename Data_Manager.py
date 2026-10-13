@@ -77,12 +77,12 @@ def date_time_format_func():
     return time_string 
 
 #outputs filtered resumes to json file
-def outputfile_func(accepted, rejected, invalid):
+def outputfile_func(accepted, rejected, invalid, userDir):
     keyname=["accepted","rejected","invalid"]
     overall_resume=[accepted,rejected,invalid]
     resume_catogerised_list=[]
     filename= "filtered_resume_"+str(date_time_format_func())+".json"
-    folder_path=Path("output")
+    folder_path=Path(userDir)
     folder_path.mkdir(parents=True, exist_ok=True)
     filepath=folder_path/filename 
     for index in range(3):

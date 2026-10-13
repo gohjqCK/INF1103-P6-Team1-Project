@@ -16,7 +16,7 @@ def main():
     rules = config["business_rules"]
     pdf_directory = config["pdf_directory"]
     top_n = config["top_n"]
-    output_directory = config["output_directory"]
+    outDir = config["output_directory"]
     rerun = False
 
     while True:
@@ -26,7 +26,7 @@ def main():
             rules = config["business_rules"]
             pdf_directory = config["pdf_directory"]
             top_n = config["top_n"]
-            output_directory = config["output_directory"]
+            outDir = config["output_directory"]
 
         IO_manager.display_message("\n[1/4] Generating AI prompt from business rules")
         rules = AI_Manager.add_keywords(rules)
@@ -50,7 +50,7 @@ def main():
 
                 if Logic_Manager.validate_resume_func(data) == 0 and Logic_Manager.validate_resume_keys_func(data) == 0:      
                     accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
-                    Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume)
+                    Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume, outDir)
                     sorted_resume = Logic_Manager.sort_resume_func(accepted_resume)
 
                     IO_manager.display_success("Resumes successfully screened")
@@ -68,7 +68,7 @@ def main():
             IO_manager.display_message("\n[4/4] Running offline rudimentry screening (Less accurate)")
             offline_resumes = Logic_Manager.offline_screening_func(resumes, rules)
             accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(offline_resumes)
-            Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume)
+            Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume, outDir)
             sorted_resume = Logic_Manager.sort_resume_func(offline_resumes)
 
             IO_manager.display_success("Offline screening complete")
