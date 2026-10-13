@@ -63,7 +63,7 @@ def validate_resume_func(resume_list):
 
 #Check if keys exists: "outcome" and "score"
 def validate_resume_keys_func(resume_list):
-    result=0
+    result=""
     resume_count=0
     for resume in resume_list:
         if "outcome" not in resume:
@@ -174,5 +174,4 @@ def offline_screening_func(resume_list, rules):
             resume["outcome"] = "scored"
             resume["score"] = 0.0
             resume["reason"] = "No rules matched"
-
     return resume_list

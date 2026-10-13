@@ -86,7 +86,7 @@ THINGS TO KNOW
   Rebuilds are fast unless requirements.txt changed (the pip install step is cached).
 - Inside a container "localhost" means the container itself. That is why the Dockerfile sets
   OLLAMA_HOST=http://host.docker.internal:11434 to reach Ollama on your PC (no -e needed).
-- Results (results.json, resumes.json, filtered_resume_<time>.json) are written into your
+- Results (ai_output.json, resumes.json, filtered_resume_<time>.json) are written into your
   project folder through the -v mount. They contain personal data - do NOT commit them.
 - Everything runs offline after the models are downloaded; no resume data leaves the computer.
 - docker compose down -v DELETES the downloaded models - avoid the -v unless you want that.

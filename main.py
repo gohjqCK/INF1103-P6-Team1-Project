@@ -8,7 +8,6 @@ import Logic_Manager
 
 AI_OUTPUT_FILE = "ai_output.json"
 
-
 def main():
     if AI_Manager.check_connection() == False:
         IO_manager.display_error("Cannot connect to Ollama or required models are missing.\nPlease install required dependancies or check if Ollama is running.")
@@ -76,7 +75,6 @@ def main():
             IO_manager.display_success("Offline screening complete")
             IO_manager.display_screening_results(sorted_resume, top_n=top_n)
             rerun = True
-        
 
 if __name__ == "__main__":
     main()
