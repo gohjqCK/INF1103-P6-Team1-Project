@@ -398,6 +398,19 @@ def select_result_file_to_view(output_dir: str = "output") -> str | None:
     return files[int(choice) - 1]
 
 
+def get_candidate_sort_score(candidate: dict) -> float:
+    """Safely extracts candidate score as a float for descending rank sorting."""
+    if not isinstance(candidate, dict):
+        return -1.0
+    val = candidate.get("score")
+    if val is None:
+        return -1.0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return -1.0
+
+
 def display_screening_results(ranked_candidates: list[dict], top_n: int = None) -> list[dict]:
     """Renders candidate records cleanly, guarding against missing keys or invalid types."""
     if not isinstance(ranked_candidates, list) or not ranked_candidates:
@@ -406,14 +419,17 @@ def display_screening_results(ranked_candidates: list[dict], top_n: int = None) 
 
     display_list = ranked_candidates[0].get("accepted", ranked_candidates) if isinstance(ranked_candidates[0], dict) else ranked_candidates
 
-    # Enforce top_n candidate limit if configured
-    if top_n is not None and top_n > 0:
-        display_list = display_list[:top_n]
-
     valid_candidates = [c for c in display_list if isinstance(c, dict)]
     if not valid_candidates:
         display_message("\n  [i] No candidate results available to display.")
         return []
+
+    # Guarantee candidates are ordered from highest to lowest score
+    valid_candidates.sort(key=get_candidate_sort_score, reverse=True)
+
+    # Enforce top_n candidate limit AFTER ranking
+    if top_n is not None and top_n > 0:
+        valid_candidates = valid_candidates[:top_n]
 
     print("\n" + "=" * 75)
     print("                       TOP RANKED CANDIDATES")
