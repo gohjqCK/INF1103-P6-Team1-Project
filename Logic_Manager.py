@@ -153,26 +153,56 @@ def link_score_to_list_func(sorted_scores, resume_list):
         #Replace the sorted score with the resume
         sorted_scores[index_position]=resume
     return sorted_scores
+    
 
-def offline_screening_func(resume_list, rules):
-    for resume in resume_list:
-        resume_text = resume.get("text", "").lower()
-        matched_count = 0
-        total_rules = len(rules)
 
-        for rule in rules:
-            rule_text = rule.get("text", "").lower()
-            words = [w for w in rule_text.split() if len(w) > 3]
-            if words and any(word in resume_text for word in words):
-                matched_count += 1
+##Main workflow
+#list of dictinary
+#Output from AI
+##AI output file goes here
+stringg="results.json"
+file_path= Path(stringg)
+validate_file_exists=validate_file_exists_func(file_path)
 
-        if matched_count > 0:
-            resume["outcome"] = "scored"
-            resume["score"] = round((matched_count / total_rules) * 100.0, 1)
-            resume["reason"] = f"Matched {matched_count} out of {total_rules} rules"
+if validate_file_exists!=0:
+    print_err_detected()
+    print(validate_file_exists)
+else:
+    
+    ai_output=""
+    validate_file_extention=validate_file_type_func(file_path)
+
+    if validate_file_extention!=0:
+        print_err_detected()
+        print(validate_file_extention)
+
+    else:
+        validate_file_empty=validate_file_empty_func(file_path)
+
+        if validate_file_empty!=0:
+            print_err_detected()
+            print(validate_file_empty)
+
         else:
-            resume["outcome"] = "scored"
-            resume["score"] = 0.0
-            resume["reason"] = "No rules matched"
+            with open(file_path, 'r') as file:
+                data = json.load(file)
+            validate_output=validate_resume_func(data)
 
-    return resume_list
+            if validate_output!=0:
+                print_err_detected()
+                print(validate_output)
+
+            else:
+                validate_keys=validate_resume_keys_func(data)
+
+                if validate_keys!=0:
+                    print_err_detected()
+                    print(validate_keys)
+
+                else:
+                    output_result=filter_resume_func(data)
+                    accepted_resume= output_result[0]
+                    rejected_resume=output_result[1]
+                    invalid_resume=output_result[2]
+                    sorted_resume= sort_resume_func(accepted_resume)
+                    print_success()
