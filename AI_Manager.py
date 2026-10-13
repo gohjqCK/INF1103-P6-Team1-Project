@@ -43,6 +43,7 @@ COMBINED_PROMPT = ChatPromptTemplate.from_messages([
     ("human", "Rules:\n{rules}\n\nDocument:\n{resume}"),
 ])
 
+# Keyword Prompt: Generates a list of keywords for a given rule to help match resumes.
 KEYWORD_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
      "You help a hiring team check resumes against their rules. "
@@ -60,7 +61,7 @@ KEYWORD_PROMPT = ChatPromptTemplate.from_messages([
     ("human", "Rule: {rule}"),
 ])
 
-
+# This functions checks if the Ollama server is reachable
 def check_connection() -> bool:
     try:
         client = ollama.Client(host=OLLAMA_HOST)
@@ -74,7 +75,7 @@ def check_connection() -> bool:
         return False
     return True
 
-
+# Set up a ChatOllama instance with the specified model and parameters
 def get_llm() -> ChatOllama:
     return ChatOllama(
         model=MODEL_NAME,
@@ -87,23 +88,20 @@ def get_llm() -> ChatOllama:
 
 
 # --- Fast Text Processing (Regex & Normalization) ---
-
 def clean_text(text: str) -> str:
     """Normalizes Unicode ligatures, converts to lower case, and keeps alphanumeric words."""
     normalized = unicodedata.normalize("NFKC", text).lower()
     return re.sub(r'[^a-z0-9]+', ' ', normalized)
 
-
+# Checks if a substring exists in a text, ignoring case and extra spaces.
 def contains_text(substring: str, text: str) -> bool:
-    """Fast check to see if substring exists in text (ignoring case & extra spaces)."""
     clean_sub = clean_text(substring).strip()
     if not clean_sub:
         return False
     return clean_sub in clean_text(text)
 
-
+# checks if any of the keywords appear as whole words in the text, ignoring case and punctuation.
 def has_keyword(text: str, keywords: list[str]) -> bool:
-    """Fast exact word boundary matching for keywords."""
     cleaned_text = clean_text(text)
     for kw in keywords:
         clean_kw = clean_text(kw).strip()
@@ -111,7 +109,7 @@ def has_keyword(text: str, keywords: list[str]) -> bool:
             return True
     return False
 
-
+# Checks if the evidence is valid based on its presence in the resume and the presence of specified keywords.
 def evidence_is_valid(evidence: str, resume_text: str, keywords: list[str]) -> bool:
     if not evidence or not contains_text(evidence, resume_text):
         return False
@@ -119,17 +117,15 @@ def evidence_is_valid(evidence: str, resume_text: str, keywords: list[str]) -> b
         return False
     return True
 
-
+# Checks if the rule's own words appear in the resume
 def rule_text_in_resume(rule_text: str, resume_text: str) -> bool:
-    """True if the rule's own words appear in the resume, e.g. rule "Python" and "Skills: Bash, Python"."""
     words = rule_text.strip()
     return has_keyword(resume_text, [words, words + "s"])
 
 
 # --- Rule Keywords ---
-
 def add_keywords(rules: list[dict]) -> list[dict]:
-    """Ask the AI for keywords for each rule (one small call per rule), clean them, and add other word forms."""
+    # Ask the AI for keywords for each rule (one small call per rule), clean them, and add other word forms.
     for rule in rules:
         # 1. Ask the AI for this rule's keywords
         try:
@@ -177,7 +173,6 @@ def add_keywords(rules: list[dict]) -> list[dict]:
 
 
 # --- Single-Pass Resume Screening ---
-
 def score_resume(rules: list[dict], checks: list[dict], resume_text: str) -> dict:
     shown, unproven = [], []
     for check in checks:
@@ -235,7 +230,7 @@ def score_resume(rules: list[dict], checks: list[dict], resume_text: str) -> dic
 
     return {"score": score, "rejected_by": rejected_by, "musts_missed": musts_missed, "reason": reason}
 
-
+# Screens a single resume against the rules and returns the result as a dictionary.
 def screen_one(rules: list[dict], resume: dict) -> dict:
     entry = {"file": resume["file"], "name": "", "email": "", "phone": "",
              "outcome": "", "score": None, "reason": "",
@@ -313,7 +308,6 @@ def screen_one(rules: list[dict], resume: dict) -> dict:
 
 
 # --- Parallel Batch Runner ---
-
 def screen_resumes(rules: list[dict], resumes: list[dict],
                    resumes_file: str = "resumes.json", results_file: str = "ai_output.json", max_workers: int = 4) -> list[dict]:
     
@@ -343,7 +337,9 @@ def screen_resumes(rules: list[dict], resumes: list[dict],
     save_resumes(resumes, resumes_file)
     return results
 
-
+# =====================================================================
+# LOCAL STANDALONE TEST
+# =====================================================================
 if __name__ == "__main__":
     if check_connection():
         rules = [
