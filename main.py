@@ -52,8 +52,8 @@ def main():
 
             if Logic_Manager.validate_resume_func(data) == 0 and Logic_Manager.validate_resume_keys_func(data) == 0:      
                 accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
-                Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume, output_folder=output_directory)
                 sorted_resume = Logic_Manager.sort_resume_func(accepted_resume)
+                Data_Manager.outputfile_func(sorted_resume, rejected_resume, invalid_resume, output_folder=output_directory)
 
                 IO_manager.display_success("Resumes successfully screened")
                 IO_manager.display_screening_results(sorted_resume, top_n=top_n)
