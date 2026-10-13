@@ -7,4 +7,3 @@ __pycache__/
 *.pyc
 
 # Ignore PDF files so it is not uploaded to github
-*.pdf
