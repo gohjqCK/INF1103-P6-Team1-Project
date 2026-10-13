@@ -398,28 +398,44 @@ def select_result_file_to_view(output_dir: str = "output") -> str | None:
     return files[int(choice) - 1]
 
 
-def display_screening_results(ranked_candidates: list[dict], top_n: int = None) -> None:
+def get_candidate_sort_score(candidate: dict) -> float:
+    """Safely extracts candidate score as a float for descending rank sorting."""
+    if not isinstance(candidate, dict):
+        return -1.0
+    val = candidate.get("score")
+    if val is None:
+        return -1.0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return -1.0
+
+
+def display_screening_results(ranked_candidates: list[dict], top_n: int = None) -> list[dict]:
     """Renders candidate records cleanly, guarding against missing keys or invalid types."""
     if not isinstance(ranked_candidates, list) or not ranked_candidates:
         display_message("\n  [i] No candidate results available to display.")
-        return
+        return []
 
     display_list = ranked_candidates[0].get("accepted", ranked_candidates) if isinstance(ranked_candidates[0], dict) else ranked_candidates
-    if top_n is not None and isinstance(top_n, int):
-        display_list = display_list[:top_n]
 
-    # Enforce top_n candidate limit if configured
+    valid_candidates = [c for c in display_list if isinstance(c, dict)]
+    if not valid_candidates:
+        display_message("\n  [i] No candidate results available to display.")
+        return []
+
+    # Guarantee candidates are ordered from highest to lowest score
+    valid_candidates.sort(key=get_candidate_sort_score, reverse=True)
+
+    # Enforce top_n candidate limit AFTER ranking
     if top_n is not None and top_n > 0:
-        display_list = display_list[:top_n]
+        valid_candidates = valid_candidates[:top_n]
 
     print("\n" + "=" * 75)
     print("                       TOP RANKED CANDIDATES")
     print("=" * 75)
 
-    for idx, candidate in enumerate(display_list, start=1):
-        if not isinstance(candidate, dict):
-            continue
-
+    for idx, candidate in enumerate(valid_candidates, start=1):
         rank = candidate.get("rank", idx)
 
         # Name fallback: name -> filename -> placeholder
@@ -447,6 +463,96 @@ def display_screening_results(ranked_candidates: list[dict], top_n: int = None) 
     print("\n" + "-" * 75)
     print("  [*] Note: Complete details saved to JSON output file")
     print("=" * 75 + "\n")
+
+    return valid_candidates
+
+
+def display_candidate_full_details(candidate: dict, rank: int) -> None:
+    """Displays detailed candidate profile including contact, scores, summary, and lists."""
+    if not isinstance(candidate, dict):
+        display_error("Invalid candidate record format.")
+        return
+
+    name = candidate.get("name") or candidate.get("file") or "Unknown Candidate"
+    if not str(name).strip():
+        name = candidate.get("file", "Unknown Candidate")
+
+    file_name = candidate.get("file") or "N/A"
+    email = candidate.get("email") or "Not provided"
+    phone = candidate.get("phone") or "Not provided"
+
+    raw_score = candidate.get("score")
+    if raw_score is not None:
+        try:
+            score_str = f"{float(raw_score):.1f}%"
+        except (ValueError, TypeError):
+            score_str = str(raw_score)
+    else:
+        outcome = candidate.get("outcome", "disqualified")
+        score_str = f"N/A ({outcome})"
+
+    outcome = candidate.get("outcome") or "scored"
+    reason = candidate.get("reason") or "No evaluation summary provided."
+    summary = candidate.get("summary") or "No summary provided."
+
+    print("\n" + "=" * 75)
+    print(f"               FULL CANDIDATE PROFILE [Rank #{rank}]")
+    print("=" * 75)
+    print(f"  Name               : {str(name).strip()}")
+    print(f"  Resume File        : {file_name}")
+    print(f"  Email              : {email}")
+    print(f"  Phone              : {phone}")
+    print(f"  Evaluation Score   : {score_str} ({outcome})")
+    print(f"  Evaluation Reason  : {reason}")
+    print("-" * 75)
+    print("  Candidate Summary  :")
+    print(f"    {summary}")
+    print("-" * 75)
+
+    section_configs = [
+        ("Skills", candidate.get("skills")),
+        ("Qualifications", candidate.get("qualifications")),
+        ("Work Experience", candidate.get("work_experience")),
+        ("Projects", candidate.get("projects")),
+    ]
+
+    for section_title, section_items in section_configs:
+        print(f"  {section_title}:")
+        if isinstance(section_items, list) and len(section_items) > 0:
+            for item in section_items:
+                print(f"    - {str(item).strip()}")
+        elif isinstance(section_items, str) and section_items.strip():
+            print(f"    - {section_items.strip()}")
+        else:
+            print("    - None listed")
+        print()
+
+    print("=" * 75 + "\n")
+
+
+def prompt_candidate_inspection(candidates: list[dict]) -> None:
+    """Interactively prompts the user to select a candidate by rank to view full profile."""
+    if not candidates:
+        return
+
+    max_rank = len(candidates)
+
+    while True:
+        print(f"\nEnter candidate rank to view full details (1-{max_rank}), or '0' to return to menu:")
+        choice = safe_input("Select rank: ").strip()
+
+        if choice == "0":
+            display_message("Returning to main menu...\n")
+            break
+
+        if choice.isdigit():
+            selected_rank = int(choice)
+            if 1 <= selected_rank <= max_rank:
+                selected_candidate = candidates[selected_rank - 1]
+                display_candidate_full_details(selected_candidate, selected_rank)
+                continue
+
+        display_error(f"Invalid rank. Please enter a number between 1 and {max_rank} (or '0' to return).")
 
 
 def view_saved_results(file_path: str = None, top_n: int = None, output_dir: str = "output") -> None:
@@ -478,7 +584,9 @@ def view_saved_results(file_path: str = None, top_n: int = None, output_dir: str
             display_error(f"'{target}' contains invalid data structure (expected JSON array).")
             return
 
-        display_screening_results(data, top_n=top_n)
+        displayed_candidates = display_screening_results(data, top_n=top_n)
+        if displayed_candidates:
+            prompt_candidate_inspection(displayed_candidates)
 
     except json.JSONDecodeError as err:
         display_error(f"Corrupted JSON in '{target}': {err.msg} (line {err.lineno})")
