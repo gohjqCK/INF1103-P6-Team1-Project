@@ -355,7 +355,7 @@ def select_result_file_to_view(output_dir: str = "output") -> str | None:
     # Fallback to project root if folder is empty
     if not files:
         root_candidates = [
-            f for f in glob.glob("filtered_resume_*.json") + glob.glob("results.json")
+            f for f in glob.glob("filtered_resume_*.json") + glob.glob("ai_output.json")
             if os.path.isfile(f)
         ]
         if root_candidates:

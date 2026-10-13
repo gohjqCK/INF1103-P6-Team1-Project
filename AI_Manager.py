@@ -297,7 +297,7 @@ def screen_one(rules: list[dict], resume: dict) -> dict:
 # --- Parallel Batch Runner ---
 
 def screen_resumes(rules: list[dict], resumes: list[dict],
-                   resumes_file: str = "resumes.json", results_file: str = "results.json", max_workers: int = 4) -> list[dict]:
+                   resumes_file: str = "resumes.json", results_file: str = "ai_output.json", max_workers: int = 4) -> list[dict]:
     
     scored, rejected, invalid = [], [], []
 
@@ -336,4 +336,4 @@ if __name__ == "__main__":
         ]
         rules = add_keywords(rules)
         resumes = parse_resumes("data", "resumes.json")
-        screen_resumes(rules, resumes, "resumes.json", "results.json", max_workers=4)
+        screen_resumes(rules, resumes, "resumes.json", "ai_output.json", max_workers=4)
