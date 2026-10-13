@@ -40,7 +40,7 @@ def validate_file_empty_func(file_path):
             return "LM: The file contains an empty JSON object or array ({ or [])."
         else:
             return 0
-    except:
+    except JSONDecodeError:
         # This catches completely blank files or files with malformed JSON
         return "LM: The file is completely empty or contains invalid JSON."
 
@@ -66,12 +66,11 @@ def validate_resume_keys_func(resume_list):
     result=""
     resume_count=0
     for resume in resume_list:
-
         if "outcome" not in resume:
-            result= str(result)+ "dictionary in "+ str(resume_count) +" position is missing a key named \"outcome\"\n"
+            result= "dictionary in "+ str(resume_count) +" position is missing a key named \"outcome\""
 
         if "score" not in resume:
-            result= str(result)+"dictionary in "+ str(resume_count)+" position is missing a key named \"score\"\n"
+            result= "dictionary in "+ str(resume_count)+" position is missing a key named \"score\""
             break
         resume_count+=1
     return result
