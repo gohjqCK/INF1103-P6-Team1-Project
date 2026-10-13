@@ -71,20 +71,22 @@ def parse_resumes(folder: str = "data", output_file: str = "resumes.json") -> li
 
 #date time format
 def date_time_format_func():
-    dt = datetime.now()
+    from datetime import timezone, timedelta
+    sgt = timezone(timedelta(hours=8))
+    dt = datetime.now(sgt)
 
     time_string = dt.strftime("%Y-%m-%d %H-%M-%S")
     return time_string 
 
 #outputs filtered resumes to json file
-def outputfile_func(accepted, rejected, invalid, userDir):
+def outputfile_func(accepted, rejected, invalid, output_folder="."):
     keyname=["accepted","rejected","invalid"]
     overall_resume=[accepted,rejected,invalid]
     resume_catogerised_list=[]
     filename= "filtered_resume_"+str(date_time_format_func())+".json"
-    folder_path=Path(userDir)
+    folder_path = Path(output_folder)
     folder_path.mkdir(parents=True, exist_ok=True)
-    filepath=folder_path/filename 
+    filepath = folder_path / filename
     for index in range(3):
         dictionary_variable={}
         dictionary_variable[keyname[index]]=overall_resume[index]
