@@ -9,6 +9,7 @@ PREREQUISITES (install once)
                            Open it and wait for "Engine running" before step 7
   - ~5.5 GB free disk space qwen2.5:7b ~4.7 GB + app image ~0.3 GB
   - 16 GB RAM recommended  the AI model uses ~5.5 GB while running (no graphics card needed)
+  - NVIDIA graphics card   OPTIONAL - much faster (see step 7). Keep the NVIDIA driver up to date
 
 STEP-BY-STEP (run in PowerShell / VS Code terminal)
  1. git clone https://github.com/gohjqCK/INF1103-P6-Team1-Project.git
@@ -28,7 +29,10 @@ STEP-BY-STEP (run in PowerShell / VS Code terminal)
                                           #   not listed? "Enter interpreter path..." > .venv\Scripts\python.exe
 
  -- Docker (for RUNNING the app) --
- 7. docker compose up -d                  # start the Ollama AI server in the background
+ 7. docker compose up -d                  # start the Ollama AI server in the background (CPU only)
+                                          #   NVIDIA GPU? use this INSTEAD (much faster):
+                                          #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+                                          #   Do NOT use the GPU command without an NVIDIA card - Ollama fails to start
  8. docker compose ps                     # check: "ollama" should show STATUS "Up"
  9. docker compose exec ollama ollama pull qwen2.5:7b
                                           # download the AI model (~4.7 GB, first time only - it is kept after)
@@ -42,10 +46,24 @@ STEP-BY-STEP (run in PowerShell / VS Code terminal)
                                           #   -v ...   : your project folder becomes /work inside the container,
                                           #              so it can read your resume folders and the JSON results
                                           #              are saved back into your project folder
-                                          #   In the menu (option 2) type the folder name, e.g. data or data_test
                                           #   Use PowerShell - Git Bash breaks the "/work" path
                                           #   Linux only: add  --add-host=host.docker.internal:host-gateway
-13. docker compose down                   # stop Ollama when finished (downloaded models are kept)
+13. Use the menu inside the app:
+      1  Manage Business Rules  -> add each rule (e.g. Python) and pick its priority, then 5 to save
+      2  Resumes & Limit        -> folder name RELATIVE to the project folder, e.g. resumes
+                                   (Enter = default "resumes"), then how many top candidates to show
+      3  Output Results Folder  -> e.g. output (Enter = default) - created if it does not exist
+      4  Proceed                -> keywords -> parse PDFs -> AI screening -> ranked results
+      5  View Screening Results -> open results saved by an earlier run
+      6  Exit
+    - Do NOT type Windows paths like C:\Users\... in the menu. The container runs Linux and
+      only sees the project folder (as /work). Resumes in another folder? Mount it too:
+        docker run -it --rm -v "${PWD}:/work" -v "C:\Users\<you>\Downloads\cvs:/cvs" resume-cli
+      then type /cvs as the resume folder in option 2.
+14. docker compose exec ollama ollama ps   # OPTIONAL, in a 2nd terminal while screening:
+                                          #   PROCESSOR "100% GPU" = graphics card, "100% CPU" = processor
+                                          #   CPU is normal but slow: ~1-1.5 min per resume (GPU: a few seconds)
+15. docker compose down                   # stop Ollama when finished (downloaded models are kept)
 
 STOPPING AND RESUMING
   docker compose stop                     # PAUSE: stop the Ollama container but keep it
@@ -67,6 +85,7 @@ EVERY TIME AFTER THAT
   .venv\Scripts\Activate.ps1              # activate the venv (if VS Code did not do it already)
   pip install -r requirements.txt         # ONLY if requirements.txt changed
   docker compose up -d                    # start Ollama (or "docker compose start" if you used stop)
+                                          #   NVIDIA GPU: use the GPU command from step 7 instead
   docker build -t resume-cli .            # rebuild ONLY if a .py file / requirements.txt / Dockerfile changed
   docker run -it --rm -v "${PWD}:/work" resume-cli
   docker compose down                     # stop Ollama when finished (or "docker compose stop")
@@ -86,12 +105,24 @@ THINGS TO KNOW
   Rebuilds are fast unless requirements.txt changed (the pip install step is cached).
 - Inside a container "localhost" means the container itself. That is why the Dockerfile sets
   OLLAMA_HOST=http://host.docker.internal:11434 to reach Ollama on your PC (no -e needed).
-- Results (ai_output.json, resumes.json, filtered_resume_<time>.json) are written into your
-  project folder through the -v mount. They contain personal data - do NOT commit them.
+- Results are written through the -v mount: ai_output.json and resumes.json into the project
+  folder, filtered/rejected/invalid_resume_<time>.json into the output folder (menu option 3).
+  They contain personal data - do NOT commit them.
 - Everything runs offline after the models are downloaded; no resume data leaves the computer.
 - docker compose down -v DELETES the downloaded models - avoid the -v unless you want that.
 - Test Qwen directly:  docker compose exec -it ollama ollama run qwen2.5:7b   (type /bye to exit)
 - "no configuration file provided" = you are not in the project folder (see step 2).
+
+TROUBLESHOOTING (DOCKER RUN)
+- "Cannot reach Ollama"         -> Ollama is not running: do step 7, check with step 8.
+- "Model 'qwen2.5:7b' is not downloaded" -> do step 9.
+- "folder does not exist"       -> you typed a Windows path, or ran docker run outside the project
+                                   folder. cd into the project folder and type e.g. resumes.
+- Very slow with an NVIDIA card -> step 14 shows "100% CPU": restart Ollama with the GPU command
+                                   (docker compose down, then the GPU command in step 7).
+                                   Still CPU? Update the NVIDIA driver, run "docker compose pull",
+                                   and check "docker compose exec ollama nvidia-smi" shows the card.
+- Code changes not showing      -> rebuild the image (step 11).
 
 
 ========================================================================
@@ -181,7 +212,7 @@ docker run -it --rm -v "${PWD}:/work" resume-cli
     -it   : interactive - needed for the menu
     --rm  : delete the container when the app exits
     -v    : mount this project folder as /work, so the app can read resume folders
-            (e.g. type data in menu option 2) and saves its JSON results here
+            (e.g. type resumes in menu option 2) and saves its JSON results here
     The image already points the app at Ollama (OLLAMA_HOST=http://host.docker.internal:11434).
 
 docker run -it --rm -v "${PWD}:/work" -e OLLAMA_MODEL=mistral resume-cli
