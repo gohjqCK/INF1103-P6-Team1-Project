@@ -197,4 +197,4 @@ def validateOfflineFile(results_path):
     if offlinedata != "":
         print(offlinedata)
         return offlinedata
-    return 0
+    #return 0
