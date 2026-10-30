@@ -1,150 +1,15 @@
 """Data Manager: reads the resume PDFs, checks they are usable, and saves them as JSON for the AI Manager."""
 import json
 import logging
-import os
 from pathlib import Path
 from datetime import datetime
 
-from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
 from pypdf import PdfReader
 
 logging.getLogger("pypdf").setLevel(logging.CRITICAL)   # hide pypdf's font warnings
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-
 MIN_TEXT_LENGTH = 200     # less text than this usually means a scanned image, not a real text PDF
 MAX_TEXT_LENGTH = 20000   # more than this won't fit in the AI's context window with the prompt
-
-HEADING_MATCH_THRESHOLD = 0.70   # below this, the heading is not similar enough to any section
-SECTION_DESCRIPTIONS = {
-    "contact":         "Contact details: phone number, email, address and website",
-    "summary":         "Summary: a short profile or overview of the candidate and their career objective",
-    "skills":          "Skills: technical skills, tools, technologies and core competencies",
-    "qualifications":  "Qualifications: degrees, university, college, academic qualifications, professional certificates, licences and training courses",
-    "work_experience": "Work experience: employment history, jobs held, roles and companies worked for",
-    "projects":        "Projects: personal, academic or professional projects",
-    "other":           "Other: awards, languages, interests, volunteering and references",
-}
-SECTION_HEADINGS = {
-    "contact":         ["contact"],
-    "summary":         ["summary", "profile", "objective", "synopsis", "highlights", "keyqualifications",
-                        "aboutme", "experiencesummary"],
-    "skills":          ["skills", "competencies", "expertise", "strengths", "proficiencies",
-                        "technicalsummary", "highlightsofexpertise"],
-    "qualifications":  ["education", "qualifications", "coursework", "academic",
-                        "certification", "certificate", "credentials", "licenses", "training"],
-    "work_experience": ["experience", "employment", "workhistory", "careerhistory", "careerhighlights"],
-    "projects":        ["projects"],
-    "other":           ["personalinformation", "awards", "languages", "interests",
-                        "volunteer", "references", "affiliations", "activities"],
-}
-
-
-def build_section_store() -> Chroma:
-    """Store each section description in ChromaDB so headings can be matched against them."""
-    # 1. The embedding model that turns text into vectors
-    embedder = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_HOST)
-
-    # 2. An empty collection in memory, comparing vectors by cosine similarity
-    store = Chroma(
-        collection_name="section_headings",
-        embedding_function=embedder,
-        collection_metadata={"hnsw:space": "cosine"},
-    )
-
-    # 3. Build three matching lists: description text, its section name, and a unique id
-    texts = []
-    metadatas = []
-    ids = []
-    for name, description in SECTION_DESCRIPTIONS.items():
-        texts.append(description)
-        metadatas.append({"section": name})
-        ids.append(name)
-
-    # 4. Add them to the collection (ChromaDB embeds each description now, once)
-    store.add_texts(texts=texts, metadatas=metadatas, ids=ids)
-    return store
-
-
-def match_heading(store: Chroma, heading: str) -> tuple:
-    """Find the section whose description is closest in meaning to a heading."""
-    # 1. Ask ChromaDB for the single closest description (k=1)
-    results = store.similarity_search_with_score(heading, k=1)
-    closest = results[0][0]
-    distance = results[0][1]
-
-    # 2. ChromaDB gives a distance (0 = identical); turn it into a similarity (1 = identical)
-    similarity = round(1 - distance, 3)
-
-    # 3. Only accept the match if it is similar enough
-    if similarity >= HEADING_MATCH_THRESHOLD:
-        section = closest.metadata["section"]
-    else:
-        section = None
-    return section, similarity
-
-
-def split_sections(text: str, store: Chroma) -> dict:
-    """Split resume text into sections using its headings: keywords first, then ChromaDB."""
-    # Start every section as empty text
-    sections = {}
-    for name in SECTION_HEADINGS:
-        sections[name] = ""
-
-    current = "contact"   # text before the first heading is usually the name and contact details
-
-    for line in text.split("\n"):
-        stripped = line.strip()
-
-        # 1. Keep only the letters, so "P E R S O N A L  P R O F I L E" becomes "personalprofile"
-        letters = ""
-        for ch in stripped.lower():
-            if ch.isalpha():
-                letters += ch
-
-        # 2. Decide if the line looks like a heading
-        if len(letters) == 0:
-            looks_like_heading = False      # empty line, or only numbers and symbols
-        elif len(letters) > 35:
-            looks_like_heading = False      # too long to be a heading
-        elif stripped.isupper():
-            looks_like_heading = True       # e.g. "PROFILE SUMMARY"
-        elif stripped.istitle():
-            looks_like_heading = True       # e.g. "Professional Experience"
-        elif stripped.endswith(":"):
-            looks_like_heading = True       # e.g. "Certifications:"
-        else:
-            looks_like_heading = False      # a normal sentence or list item
-
-        # 3. Find the longest (most specific) keyword in the line, and the section it belongs to
-        keyword_section = None
-        longest = 0
-        for section, keywords in SECTION_HEADINGS.items():
-            for keyword in keywords:
-                if keyword in letters and len(keyword) > longest:
-                    keyword_section = section
-                    longest = len(keyword)
-
-        # 4. Decide which section this line starts (None means it is a normal line)
-        if not looks_like_heading:
-            new_section = None                                          # not a heading
-        elif keyword_section is not None:
-            new_section = keyword_section                               # heading matched by a keyword
-        else:
-            new_section, similarity = match_heading(store, stripped)    # heading with no keyword: ask ChromaDB
-
-        # 5. A heading switches the current section; any other line is added to it
-        if new_section is None:
-            sections[current] += line + "\n"
-        else:
-            current = new_section
-
-    # 6. Tidy up extra blank lines at the start and end of each section
-    for name in sections:
-        sections[name] = sections[name].strip()
-    return sections
 
 
 def save_resumes(resumes: list[dict], output_file: str) -> list[dict]:
@@ -164,8 +29,7 @@ def save_resumes(resumes: list[dict], output_file: str) -> list[dict]:
 
 
 def parse_resumes(folder: str = "data", output_file: str = "resumes.json") -> list[dict]:
-    """Read every PDF in a folder, split valid ones into sections, and save them as JSON (invalid ones last)."""
-    store = build_section_store()   # built once, reused for every resume
+    """Read every PDF in a folder, check it is usable, and save them all as JSON (invalid ones last)."""
     resumes = []
 
     for path in sorted(Path(folder).iterdir()):
@@ -199,33 +63,46 @@ def parse_resumes(folder: str = "data", output_file: str = "resumes.json") -> li
                 status = "valid"
                 reason = ""
 
-            # 4. Valid resumes are also split into sections
-            sections = {}
-            if status == "valid":
-                sections = split_sections(text, store)
-
             resumes.append({"file": path.name, "status": status, "reason": reason,
-                            "pages": pages, "text": text, "sections": sections})
+                            "pages": pages, "text": text})
 
-    # 5. Save as JSON: valid resumes first, invalid ones at the bottom
+    # 4. Save as JSON: valid resumes first, invalid ones at the bottom
     return save_resumes(resumes, output_file)
 
 #date time format
 def date_time_format_func():
-    dt = datetime.now()
+    from datetime import timezone, timedelta
+    sgt = timezone(timedelta(hours=8))
+    dt = datetime.now(sgt)
 
     time_string = dt.strftime("%Y-%m-%d %H-%M-%S")
     return time_string 
 
 #outputs filtered resumes to json file
-def outputfile_func(accepted, rejected, invalid):
+def outputfile_func(accepted, rejected, invalid, output_folder="."):
     keyname=["accepted","rejected","invalid"]
     overall_resume=[accepted,rejected,invalid]
     resume_catogerised_list=[]
     filename= "filtered_resume_"+str(date_time_format_func())+".json"
+    folder_path = Path(output_folder)
+    folder_path.mkdir(parents=True, exist_ok=True)
+    filepath = folder_path / filename
     for index in range(3):
         dictionary_variable={}
         dictionary_variable[keyname[index]]=overall_resume[index]
         resume_catogerised_list.append(dictionary_variable)
-    with open(filename,"w", encoding="utf-8") as file:
+    with open(filepath,"w", encoding="utf-8") as file:
             json.dump(resume_catogerised_list,file, ensure_ascii=False, indent=4)
+
+def save_businessrules(businessrules):
+    with open("Business_Rules.json", "w", encoding="utf-8") as f:
+        json.dump(businessrules, f, indent=4)
+
+def get_businessrules():
+    try:
+        with open("Business_Rules.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        with open("Business_Rules.json", "w", encoding="utf-8") as f:
+            json.dump([], f, indent=4)
+        return []

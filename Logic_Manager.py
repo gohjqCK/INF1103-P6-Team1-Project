@@ -63,7 +63,7 @@ def validate_resume_func(resume_list):
 
 #Check if keys exists: "outcome" and "score"
 def validate_resume_keys_func(resume_list):
-    result=0
+    result=""
     resume_count=0
     for resume in resume_list:
         if "outcome" not in resume:
@@ -153,56 +153,48 @@ def link_score_to_list_func(sorted_scores, resume_list):
         #Replace the sorted score with the resume
         sorted_scores[index_position]=resume
     return sorted_scores
-    
 
+def offline_screening_func(resume_list, rules):
+    for resume in resume_list:
+        resume_text = resume.get("text", "").lower()
+        matched_count = 0
+        total_rules = len(rules)
 
-##Main workflow
-#list of dictinary
-#Output from AI
-##AI output file goes here
-stringg="results.json"
-file_path= Path(stringg)
-validate_file_exists=validate_file_exists_func(file_path)
+        for rule in rules:
+            rule_text = rule.get("text", "").lower()
+            words = [w for w in rule_text.split() if len(w) > 3]
+            if words and any(word in resume_text for word in words):
+                matched_count += 1
 
-if validate_file_exists!=0:
-    print_err_detected()
-    print(validate_file_exists)
-else:
-    
-    ai_output=""
-    validate_file_extention=validate_file_type_func(file_path)
-
-    if validate_file_extention!=0:
-        print_err_detected()
-        print(validate_file_extention)
-
-    else:
-        validate_file_empty=validate_file_empty_func(file_path)
-
-        if validate_file_empty!=0:
-            print_err_detected()
-            print(validate_file_empty)
-
+        if matched_count > 0:
+            resume["outcome"] = "scored"
+            resume["score"] = round((matched_count / total_rules) * 100.0, 1)
+            resume["reason"] = f"Matched {matched_count} out of {total_rules} rules"
         else:
-            with open(file_path, 'r') as file:
-                data = json.load(file)
-            validate_output=validate_resume_func(data)
+            resume["outcome"] = "scored"
+            resume["score"] = 0.0
+            resume["reason"] = "No rules matched"
+    return resume_list
 
-            if validate_output!=0:
-                print_err_detected()
-                print(validate_output)
 
-            else:
-                validate_keys=validate_resume_keys_func(data)
-
-                if validate_keys!=0:
-                    print_err_detected()
-                    print(validate_keys)
-
-                else:
-                    output_result=filter_resume_func(data)
-                    accepted_resume= output_result[0]
-                    rejected_resume=output_result[1]
-                    invalid_resume=output_result[2]
-                    sorted_resume= sort_resume_func(accepted_resume)
-                    print_success()
+def validateOfflineFile(results_path):
+    offlinefile=validate_file_exists_func(results_path)
+    if  offlinefile != 0:
+        return offlinefile
+    offlinefile=validate_file_type_func(results_path)
+    if  offlinefile!= 0:
+        return offlinefile
+    offlinefile=validate_file_empty_func(results_path)
+    if  offlinefile!= 0:
+        return offlinefile
+    with open(results_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    offlinedata=validate_resume_func(data)
+    if offlinedata != 0:
+        print(offlinedata)
+        return offlinedata
+    offlinedata=validate_resume_keys_func(data)
+    if offlinedata != "":
+        print(offlinedata)
+        return offlinedata
+    return 0

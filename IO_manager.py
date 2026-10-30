@@ -1,7 +1,12 @@
+from datetime import datetime, timezone, timedelta
 import glob
 import json
 import os
 import sys
+import Data_Manager
+
+# Singapore Standard Time (SGT = UTC+8)
+SGT_TIMEZONE = timezone(timedelta(hours=8))
 
 # =====================================================================
 # DISPLAY HELPERS
@@ -285,48 +290,153 @@ def configure_resumes_and_limit() -> tuple[str, int]:
     return folder, limit
 
 
+def get_valid_output_directory(current_output_dir: str = "output") -> str:
+    """Validates and configures the directory where screening result JSON files are stored."""
+    print("\n--- STEP: OUTPUT RESULTS FOLDER SELECTION ---")
+    print(f"Tip: Press ENTER to use the current/default folder '{current_output_dir}'.\n")
+
+    while True:
+        folder_path = safe_input(f"Enter output directory path [Default: {current_output_dir}]: ").strip()
+
+        if not folder_path:
+            folder_path = current_output_dir
+
+        # Sanitize pasted shell paths
+        folder_path = folder_path.strip("'\"").replace("\\ ", " ")
+
+        # Create folder if it doesn't already exist and test write permissions
+        try:
+            os.makedirs(folder_path, exist_ok=True)
+            test_file = os.path.join(folder_path, ".write_test.tmp")
+            with open(test_file, "w") as f:
+                f.write("ok")
+            os.remove(test_file)
+        except PermissionError:
+            display_error(f"Permission denied accessing or creating folder '{folder_path}'.")
+            continue
+        except OSError as e:
+            display_error(f"Operating system error for folder '{folder_path}': {e}")
+            continue
+
+        display_success(f"Output folder configured: '{folder_path}'.")
+        return folder_path
+
+
 # =====================================================================
 # RESULTS DISPLAY & FILE RECOVERY
 # =====================================================================
 
 
-def find_results_file(target_file: str = None) -> str | None:
-    """Resolves any existing results JSON file in the project workspace."""
-    if target_file and os.path.isfile(target_file):
-        return target_file
+def find_results_files_in_folder(output_dir: str = "output") -> list[str]:
+    """Returns all result JSON files from the output folder, sorted newest first."""
+    if not os.path.exists(output_dir) or not os.path.isdir(output_dir):
+        return []
 
-    common_names = ["filtered_resume.json", "results.json", "ranked_resumes.json"]
-    for filename in common_names:
-        if os.path.isfile(filename):
-            return filename
+    pattern = os.path.join(output_dir, "*.json")
+    all_files = glob.glob(pattern)
 
-    # Fallback to the latest modified JSON file
-    all_json_files = glob.glob("*.json")
-    if all_json_files:
+    result_files = []
+    for filepath in all_files:
+        basename = os.path.basename(filepath).lower()
+        if basename != "resumes.json":
+            result_files.append(filepath)
+
+    try:
+        result_files.sort(key=os.path.getmtime, reverse=True)
+    except OSError:
+        pass
+
+    return result_files
+
+
+def select_result_file_to_view(output_dir: str = "output") -> str | None:
+    """Displays available screening result files and prompts user to pick one."""
+    files = find_results_files_in_folder(output_dir)
+
+    # Fallback to project root if folder is empty
+    if not files:
+        root_candidates = [
+            f for f in glob.glob("filtered_resume_*.json") + glob.glob("results.json")
+            if os.path.isfile(f)
+        ]
+        if root_candidates:
+            try:
+                root_candidates.sort(key=os.path.getmtime, reverse=True)
+            except OSError:
+                pass
+            files = root_candidates
+
+    if not files:
+        display_error(f"No results JSON files found in '{output_dir}'. Please run screening first.")
+        return None
+
+    if len(files) == 1:
+        display_message(f"\n  [*] Found 1 result file: '{os.path.basename(files[0])}'")
+        return files[0]
+
+    print("\n---------------- AVAILABLE SCREENING RESULTS ----------------")
+    print(f"  Target Folder: '{output_dir}'")
+    for idx, filepath in enumerate(files, start=1):
+        filename = os.path.basename(filepath)
         try:
-            return max(all_json_files, key=os.path.getmtime)
+            mtime = os.path.getmtime(filepath)
+            # Format in Singapore Standard Time (SGT, UTC+8)
+            time_str = datetime.fromtimestamp(mtime, tz=timezone.utc).astimezone(SGT_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
+            size_kb = round(os.path.getsize(filepath) / 1024, 1)
+            print(f"  {idx}. {filename}  [{time_str} SGT | {size_kb} KB]")
         except OSError:
-            return None
+            print(f"  {idx}. {filename}")
+    print("-------------------------------------------------------------")
 
-    return None
+    print("\nEnter result number to view (or '0' to cancel):")
+    valid_choices = [str(i) for i in range(len(files) + 1)]
+    choice = get_valid_menu_choice(valid_choices)
+
+    if choice == "0":
+        display_message("View results cancelled.")
+        return None
+
+    return files[int(choice) - 1]
 
 
-def display_screening_results(ranked_candidates: list[dict], top_n: int = None) -> None:
+def get_candidate_sort_score(candidate: dict) -> float:
+    """Safely extracts candidate score as a float for descending rank sorting."""
+    if not isinstance(candidate, dict):
+        return -1.0
+    val = candidate.get("score")
+    if val is None:
+        return -1.0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return -1.0
+
+
+def display_screening_results(ranked_candidates: list[dict], top_n: int = None) -> list[dict]:
     """Renders candidate records cleanly, guarding against missing keys or invalid types."""
     if not isinstance(ranked_candidates, list) or not ranked_candidates:
         display_message("\n  [i] No candidate results available to display.")
-        return
+        return []
 
     display_list = ranked_candidates[0].get("accepted", ranked_candidates) if isinstance(ranked_candidates[0], dict) else ranked_candidates
+
+    valid_candidates = [c for c in display_list if isinstance(c, dict)]
+    if not valid_candidates:
+        display_message("\n  [i] No candidate results available to display.")
+        return []
+
+    # Guarantee candidates are ordered from highest to lowest score
+    valid_candidates.sort(key=get_candidate_sort_score, reverse=True)
+
+    # Enforce top_n candidate limit AFTER ranking
+    if top_n is not None and top_n > 0:
+        valid_candidates = valid_candidates[:top_n]
 
     print("\n" + "=" * 75)
     print("                       TOP RANKED CANDIDATES")
     print("=" * 75)
 
-    for idx, candidate in enumerate(display_list, start=1):
-        if not isinstance(candidate, dict):
-            continue
-
+    for idx, candidate in enumerate(valid_candidates, start=1):
         rank = candidate.get("rank", idx)
 
         # Name fallback: name -> filename -> placeholder
@@ -355,13 +465,105 @@ def display_screening_results(ranked_candidates: list[dict], top_n: int = None) 
     print("  [*] Note: Complete details saved to JSON output file")
     print("=" * 75 + "\n")
 
+    return valid_candidates
 
-def view_saved_results(file_path: str = None, top_n: int = None) -> None:
+
+def display_candidate_full_details(candidate: dict, rank: int) -> None:
+    """Displays detailed candidate profile including contact, scores, summary, and lists."""
+    if not isinstance(candidate, dict):
+        display_error("Invalid candidate record format.")
+        return
+
+    name = candidate.get("name") or candidate.get("file") or "Unknown Candidate"
+    if not str(name).strip():
+        name = candidate.get("file", "Unknown Candidate")
+
+    file_name = candidate.get("file") or "N/A"
+    email = candidate.get("email") or "Not provided"
+    phone = candidate.get("phone") or "Not provided"
+
+    raw_score = candidate.get("score")
+    if raw_score is not None:
+        try:
+            score_str = f"{float(raw_score):.1f}%"
+        except (ValueError, TypeError):
+            score_str = str(raw_score)
+    else:
+        outcome = candidate.get("outcome", "disqualified")
+        score_str = f"N/A ({outcome})"
+
+    outcome = candidate.get("outcome") or "scored"
+    reason = candidate.get("reason") or "No evaluation summary provided."
+    summary = candidate.get("summary") or "No summary provided."
+
+    print("\n" + "=" * 75)
+    print(f"               FULL CANDIDATE PROFILE [Rank #{rank}]")
+    print("=" * 75)
+    print(f"  Name               : {str(name).strip()}")
+    print(f"  Resume File        : {file_name}")
+    print(f"  Email              : {email}")
+    print(f"  Phone              : {phone}")
+    print(f"  Evaluation Score   : {score_str} ({outcome})")
+    print(f"  Evaluation Reason  : {reason}")
+    print("-" * 75)
+    print("  Candidate Summary  :")
+    print(f"    {summary}")
+    print("-" * 75)
+
+    section_configs = [
+        ("Skills", candidate.get("skills")),
+        ("Qualifications", candidate.get("qualifications")),
+        ("Work Experience", candidate.get("work_experience")),
+        ("Projects", candidate.get("projects")),
+    ]
+
+    for section_title, section_items in section_configs:
+        print(f"  {section_title}:")
+        if isinstance(section_items, list) and len(section_items) > 0:
+            for item in section_items:
+                print(f"    - {str(item).strip()}")
+        elif isinstance(section_items, str) and section_items.strip():
+            print(f"    - {section_items.strip()}")
+        else:
+            print("    - None listed")
+        print()
+
+    print("=" * 75 + "\n")
+
+
+def prompt_candidate_inspection(candidates: list[dict]) -> None:
+    """Interactively prompts the user to select a candidate by rank to view full profile."""
+    if not candidates:
+        return
+
+    max_rank = len(candidates)
+
+    while True:
+        print(f"\nEnter candidate rank to view full details (1-{max_rank}), or '0' to return to menu:")
+        choice = safe_input("Select rank: ").strip()
+
+        if choice == "0":
+            display_message("Returning to main menu...\n")
+            break
+
+        if choice.isdigit():
+            selected_rank = int(choice)
+            if 1 <= selected_rank <= max_rank:
+                selected_candidate = candidates[selected_rank - 1]
+                display_candidate_full_details(selected_candidate, selected_rank)
+                continue
+
+        display_error(f"Invalid rank. Please enter a number between 1 and {max_rank} (or '0' to return).")
+
+
+def view_saved_results(file_path: str = None, top_n: int = None, output_dir: str = "output") -> None:
     """Reads and parses saved JSON output with protection against corruption."""
-    target = find_results_file(file_path)
+    if file_path:
+        target = file_path
+    else:
+        target = select_result_file_to_view(output_dir)
 
     if not target:
-        display_error("No results JSON file found. Please run screening first (Option 3).")
         return
 
     # Check for empty file
@@ -383,7 +585,9 @@ def view_saved_results(file_path: str = None, top_n: int = None) -> None:
             display_error(f"'{target}' contains invalid data structure (expected JSON array).")
             return
 
-        display_screening_results(data, top_n=top_n)
+        displayed_candidates = display_screening_results(data, top_n=top_n)
+        if displayed_candidates:
+            prompt_candidate_inspection(displayed_candidates)
 
     except json.JSONDecodeError as err:
         display_error(f"Corrupted JSON in '{target}': {err.msg} (line {err.lineno})")
@@ -400,11 +604,15 @@ def view_saved_results(file_path: str = None, top_n: int = None) -> None:
 
 def get_employer_inputs(rerun:dict = None) -> dict:
     """Interactive menu dashboard enforcing prerequisite guards before pipeline handoff."""
+    rules = Data_Manager.get_businessrules()
     config = rerun if rerun else {
-        "business_rules": [],
+        "business_rules": rules,
         "pdf_directory": "resumes",
-        "top_n": 3
+        "top_n": 3,
+        "output_directory": "output"
     }
+    if "output_directory" not in config:
+        config["output_directory"] = "output"
 
     while True:
         rules_status = (
@@ -416,17 +624,19 @@ def get_employer_inputs(rerun:dict = None) -> dict:
         print("\n=============================================")
         print("          RESUME SCREENER SETUP MENU         ")
         print("=============================================")
-        print(f"1. Manage Business Rules Criteria [{rules_status}]")
-        print(f"2. Configure Resumes & Limit      [Folder: '{config['pdf_directory']}', Limit: {config['top_n']}]")
-        print("3. Proceed to Resume Screening")
-        print("4. View Screening Results (from JSON)")
-        print("5. Exit Application")
+        print(f"1. Manage Business Rules Criteria  [{rules_status}]")
+        print(f"2. Configure Resumes & Limit       [Folder: '{config['pdf_directory']}', Limit: {config['top_n']}]")
+        print(f"3. Configure Output Results Folder [Folder: '{config['output_directory']}']")
+        print("4. Proceed to Resume Screening")
+        print("5. View Screening Results (from JSON)")
+        print("6. Exit Application")
         print("=============================================")
 
-        choice = get_valid_menu_choice(["1", "2", "3", "4", "5"])
+        choice = get_valid_menu_choice(["1", "2", "3", "4", "5", "6"])
 
         if choice == "1":
             config["business_rules"] = manage_business_rules(config["business_rules"])
+            Data_Manager.save_businessrules(config["business_rules"])
 
         elif choice == "2":
             folder, limit = configure_resumes_and_limit()
@@ -434,6 +644,9 @@ def get_employer_inputs(rerun:dict = None) -> dict:
             config["top_n"] = limit
 
         elif choice == "3":
+            config["output_directory"] = get_valid_output_directory(config["output_directory"])
+
+        elif choice == "4":
             if not config["business_rules"]:
                 display_error("You must configure at least one Business Rule (Option 1) before starting!")
                 continue
@@ -454,10 +667,10 @@ def get_employer_inputs(rerun:dict = None) -> dict:
             display_success("Configuration verified! Handing off to main pipeline...\n")
             return config
 
-        elif choice == "4":
-            view_saved_results(file_path=None, top_n=config["top_n"])
-
         elif choice == "5":
+            view_saved_results(file_path=None, top_n=config["top_n"], output_dir=config["output_directory"])
+
+        elif choice == "6":
             display_message("\nExiting Resume Screener. Goodbye!")
             sys.exit(0)
 
