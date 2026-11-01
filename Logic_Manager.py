@@ -8,6 +8,57 @@ from pathlib import Path
     variable resume only used in for loops
     _func are functions to be called'''
 
+class ResumeList():
+    def __init__(self,resume_list):
+        self.__resume_list=resume_list
+
+    def get_score_list(self):
+        score_list=[]
+        resume_list=self.__resume_list
+        for resume in resume_list:
+            score_list.append(resume.get_score())
+        return score_list
+
+    def get_filtered_resume_list(self):
+        pass
+        resume_list=self.__resume_list
+        #for resume in resume_list:
+            #status=
+
+class AcceptedList():
+    def __init__(self,resume_list):
+        self.__resume_list=resume_list
+
+class RejcetedList():
+    def __init__(self,resume_list):
+        self.__resume_list=resume_list
+
+class InvalidList():
+    def __init__(self,resume_list):
+        self.__resume_list=resume_list
+
+class Resume():
+    def __init__(self,file,status,reason,pages,text,outcome,score):
+        self.__filename=file
+        self.__status=status
+        self.__reason=reason
+        self.__pages=pages
+        self.__text=text
+        self.__outcome=outcome
+        self.__score=score
+
+    def get_status(self):
+        return self.__status
+    def get_reason(self):
+        return self.__reason
+    def get_text(self):
+        return self.__text
+    def get_outcome(self):
+        return self.__outcome
+    def get_score(self):
+        return self.__score
+    
+
 #prints error detected
 def print_err_detected():
     print("Error detected:")
@@ -197,4 +248,4 @@ def validateOfflineFile(results_path):
     if offlinedata != "":
         print(offlinedata)
         return offlinedata
-    #return 0
+    return 0
