@@ -1,16 +1,14 @@
 # AI Manager: checks, scores and summarises resumes with a local AI model (Ollama).
 import json
 import os
-import re
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 
 import ollama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
+from ai_manager_modules.ai_manager_text_matcher import TextMatcher
 
-from Data_Manager import parse_resumes, save_resumes
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
@@ -86,41 +84,18 @@ def get_llm() -> ChatOllama:
         num_ctx=8192,
     )
 
-
-# --- Fast Text Processing (Regex & Normalization) ---
-def clean_text(text: str) -> str:
-    """Normalizes Unicode ligatures, converts to lower case, and keeps alphanumeric words."""
-    normalized = unicodedata.normalize("NFKC", text).lower()
-    return re.sub(r'[^a-z0-9]+', ' ', normalized)
-
-# Checks if a substring exists in a text, ignoring case and extra spaces.
-def contains_text(substring: str, text: str) -> bool:
-    clean_sub = clean_text(substring).strip()
-    if not clean_sub:
-        return False
-    return clean_sub in clean_text(text)
-
-# checks if any of the keywords appear as whole words in the text, ignoring case and punctuation.
-def has_keyword(text: str, keywords: list[str]) -> bool:
-    cleaned_text = clean_text(text)
-    for kw in keywords:
-        clean_kw = clean_text(kw).strip()
-        if clean_kw and re.search(rf'\b{re.escape(clean_kw)}\b', cleaned_text):
-            return True
-    return False
-
-# Checks if the evidence is valid based on its presence in the resume and the presence of specified keywords.
 def evidence_is_valid(evidence: str, resume_text: str, keywords: list[str]) -> bool:
-    if not evidence or not contains_text(evidence, resume_text):
+    if not evidence or not TextMatcher(resume_text).contains(evidence):
         return False
-    if keywords and not has_keyword(evidence, keywords):
+    if keywords and not TextMatcher(evidence).has_any_word(keywords):
         return False
     return True
 
-# Checks if the rule's own words appear in the resume
+
 def rule_text_in_resume(rule_text: str, resume_text: str) -> bool:
     words = rule_text.strip()
-    return has_keyword(resume_text, [words, words + "s"])
+    return TextMatcher(resume_text).has_any_word([words, words + "s"])
+
 
 
 # --- Rule Keywords ---
@@ -280,9 +255,11 @@ def screen_one(rules: list[dict], resume: dict) -> dict:
             if not isinstance(info, dict):
                 info = {}
 
+            matcher = TextMatcher(resume["text"])
+
             for field in ["name", "email", "phone"]:
                 val = str(info.get(field) or "")      # null becomes "" (not the text "None")
-                if contains_text(val, resume["text"]):
+                if matcher.contains(val):
                     entry[field] = val
 
             entry["summary"] = str(info.get("summary") or "")
@@ -294,7 +271,7 @@ def screen_one(rules: list[dict], resume: dict) -> dict:
                     items = []
                 if cat == "skills":
                     # Only keep skills that really appear in the resume
-                    entry[cat] = [str(s) for s in items if isinstance(s, str) and contains_text(s, resume["text"])]
+                    entry[cat] = [str(s) for s in items if isinstance(s, str) and matcher.contains(s)]
                 else:
                     entry[cat] = [str(x) for x in items if isinstance(x, (str, int))]
 
@@ -334,20 +311,5 @@ def screen_resumes(rules: list[dict], resumes: list[dict],
     with open(results_file, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
-    save_resumes(resumes, resumes_file)
     return results
 
-# =====================================================================
-# LOCAL STANDALONE TEST
-# =====================================================================
-if __name__ == "__main__":
-    if check_connection():
-        rules = [
-            {"text": "At least 2 years of networking experience", "priority": "must"},
-            {"text": "CCNA is listed as a certification", "priority": "important"},
-            {"text": "Has cloud experience", "priority": "nice"},
-            {"text": "Has a criminal record", "priority": "reject"},
-        ]
-        rules = add_keywords(rules)
-        resumes = parse_resumes("data", "resumes.json")
-        screen_resumes(rules, resumes, "resumes.json", "ai_output.json", max_workers=4)
