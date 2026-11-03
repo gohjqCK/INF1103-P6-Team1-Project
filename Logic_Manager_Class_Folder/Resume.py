@@ -17,3 +17,8 @@ class Resume:
     def get_profile(self):
         profile_dict=self.__profile.get_profile_dict
         return profile_dict
+    @property
+    def get_score(self):
+        return self.__profile.score
+    
+

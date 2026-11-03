@@ -2,8 +2,13 @@
 import copy
 import json
 from json.decoder import JSONDecodeError
-from pathlib import Path
-from abc import ABC, abstractmethod
+from Logic_Manager_Class_Folder.Resume import Resume
+from Logic_Manager_Class_Folder.Profile import Profile
+from Logic_Manager_Class_Folder.OverallList import OverallList
+from Logic_Manager_Class_Folder.AcceptedList import AcceptedList
+from Logic_Manager_Class_Folder.RejectedList import RejcetedList
+from Logic_Manager_Class_Folder.InvalidList import InvalidList
+
 
 '''===========Logic_Manager Rules:=================
     variable resume only used in for loops
@@ -147,7 +152,7 @@ def filter_resume_func(resume_list):
             
     return [filtered_list,rejected_list,invalid_list]
 
-#Orders the list from highest to lowest score // using merge sort
+'''#Orders the list from highest to lowest score // using merge sort
 def sort_resume_func(resume_list):
     score_list=extract_scores_func(resume_list)
     sorted_scores=sort_score_func(score_list)
@@ -195,7 +200,7 @@ def merge(left, right):
     # Append any remaining elements left over from either list
     result.extend(left[i:])
     result.extend(right[j:])
-    return result
+    return result'''
 
 def link_score_to_list_func(sorted_scores, resume_list):
     for resume in resume_list:
