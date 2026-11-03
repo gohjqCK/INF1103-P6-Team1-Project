@@ -1,14 +1,15 @@
 '''Logic_Manager Library'''
 import copy
 import json
+from pathlib import Path
 from json.decoder import JSONDecodeError
 from Logic_Manager_Class_Folder.Resume import Resume
 from Logic_Manager_Class_Folder.Profile import Profile
 from Logic_Manager_Class_Folder.OverallList import OverallList
 from Logic_Manager_Class_Folder.AcceptedList import AcceptedList
-from Logic_Manager_Class_Folder.RejectedList import RejcetedList
+from Logic_Manager_Class_Folder.RejectedList import RejectedList
 from Logic_Manager_Class_Folder.InvalidList import InvalidList
-
+from Logic_Manager_Class_Folder.ResumeEvaluator import ResumeEvaluator
 
 '''===========Logic_Manager Rules:=================
     variable resume only used in for loops
@@ -137,20 +138,33 @@ def validate_resume_keys_func(resume_list):
 def filter_resume_func(resume_list):
     #Copies the data
     resume_list_copy=copy.deepcopy(resume_list)
-    invalid_list=[]
-    rejected_list=[]
-    filtered_list=[]
-    for resume in resume_list_copy:
-        if resume["outcome"]!="scored" or type(resume["score"]) is not float:
-            invalid_list.append(resume)
-            continue
-        elif resume["outcome"]=="scored" and resume["score"]==0.0:
-            rejected_list.append(resume)
-            continue
-        else:
-            filtered_list.append(resume)
-            
-    return [filtered_list,rejected_list,invalid_list]
+    #to allocate stringname
+    combinedList={"acceptedList":[],"rejectedList":[],"invalidList":[]}
+    for raw_resume in resume_list_copy:
+        #create a resume
+        resume= Resume(raw_resume)
+        #Decide which list to put the resume in
+        resumeEvaluate=ResumeEvaluator(resume)
+        #the return value + "List"
+        stringname=str(resumeEvaluate.category())+"List"
+        
+        combinedList[stringname].append(resume)
+
+    #creating classes
+    acceptedList=AcceptedList()
+    rejectedList=RejectedList()
+    invalidList=InvalidList()
+    #adding the combined list to the respective class
+    acceptedList.list=combinedList["acceptedList"]
+    rejectedList.list=combinedList["rejectedList"]
+    invalidList.list=combinedList["invalidList"]
+
+    #appending all classes to the overallList class
+    overallList=OverallList()
+    overallList.list_overall=acceptedList.output_dict
+    overallList.list_overall=rejectedList.output_dict
+    overallList.list_overall=invalidList.output_dict
+    return overallList.list_overall
 
 '''#Orders the list from highest to lowest score // using merge sort
 def sort_resume_func(resume_list):
@@ -201,7 +215,7 @@ def merge(left, right):
     result.extend(left[i:])
     result.extend(right[j:])
     return result'''
-
+'''
 def link_score_to_list_func(sorted_scores, resume_list):
     for resume in resume_list:
         #finds the value of score in loop resume
@@ -211,6 +225,7 @@ def link_score_to_list_func(sorted_scores, resume_list):
         #Replace the sorted score with the resume
         sorted_scores[index_position]=resume
     return sorted_scores
+'''
 
 def offline_screening_func(resume_list, rules):
     for resume in resume_list:

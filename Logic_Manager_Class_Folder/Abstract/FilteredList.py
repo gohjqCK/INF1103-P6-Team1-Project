@@ -6,11 +6,13 @@ class FilteredList(ABC):
 
     #prints list
     @property
+    @abstractmethod
     def list(self):
         return self.__resume_list
     
     #adds to list usage (listname.list=resume)
     @list.setter
+    @abstractmethod
     def list(self,resume):
         self.__resume_list.append(resume)
 

@@ -4,6 +4,14 @@ from Resume import Resume
 class InvalidList(FilteredList,Output_dict):
     def __init__(self):
         super().__init__()
+    @property
+    def list(self):
+        return self.__resume_list
+    
+    @list.setter
+    def list(self,resume):
+        self.__resume_list=resume
+
     #Abstract method
     @property
     def output_dict(self):

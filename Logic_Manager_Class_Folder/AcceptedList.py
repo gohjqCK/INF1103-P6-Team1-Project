@@ -6,6 +6,16 @@ from Interface.Sort_score import Sort_score
 class AcceptedList(FilteredList,Output_dict,Sort_score):
     def __init__(self):
         super().__init__()
+
+    @property
+    def list(self):
+        return self.__resume_list
+    
+    @list.setter
+    def list(self,resume):
+        self.__resume_list=resume
+
+
     #Abstract method
     @property
     def output_dict(self):
