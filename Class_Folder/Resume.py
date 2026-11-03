@@ -1,20 +1,19 @@
-class Resume():
-    def __init__(self,file,status,reason,pages,text,outcome,score):
-        self.__filename=file
-        self.__status=status
-        self.__reason=reason
-        self.__pages=pages
-        self.__text=text
-        self.__outcome=outcome
-        self.__score=score
+from Profile import Profile
+class Resume:
+    def __init__(self,file,name,email,phone,outcome,score,reason,summary,skills,qualifications,work_experience,projects):
+        self.__name=name
+        self.__email=email
+        self.__phone=phone
+        self.__summary=summary
+        self.__skills=skills
+        self.__qualifications=qualifications
+        self.__work_experience=work_experience
+        self.__projects=projects
+        self.__profile=Profile(file,outcome,reason,score)
 
-    def get_status(self):
-        return self.__status
-    def get_reason(self):
-        return self.__reason
-    def get_text(self):
-        return self.__text
-    def get_outcome(self):
-        return self.__outcome
-    def get_score(self):
-        return self.__score
+    def get_resume(self):
+        return {"name":self.__name,"email":self.__email,"phone":self.__phone,"summary":self.__summary,"skills":self.__skills,"qualifications":self.__qualifications,"work_experience":self.__work_experience,"projects":self.__projects}
+
+    def get_profile(self):
+        profile_dict=self.__profile.get_profile_dict()
+        return profile_dict
