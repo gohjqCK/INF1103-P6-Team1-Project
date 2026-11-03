@@ -36,3 +36,5 @@ xxhash==4.0.1
 zstandard==0.25.0
 supabase
 python-telegram-bot
+pyTelegramBotAPI
+python-dotenv

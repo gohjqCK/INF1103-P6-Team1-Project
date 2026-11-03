@@ -6,4 +6,9 @@ venv/
 __pycache__/
 *.pyc
 
-# Ignore PDF files so it is not uploaded to github
+# Ignore PDF and local company test data
+*.pdf
+companies/
+companies.json
+
+.env
