@@ -10,10 +10,10 @@ class Resume:
         self.__work_experience=work_experience
         self.__projects=projects
         self.__profile=Profile(file,outcome,reason,score)
-
+    @property
     def get_resume(self):
         return {"name":self.__name,"email":self.__email,"phone":self.__phone,"summary":self.__summary,"skills":self.__skills,"qualifications":self.__qualifications,"work_experience":self.__work_experience,"projects":self.__projects}
-
+    @property
     def get_profile(self):
-        profile_dict=self.__profile.get_profile_dict()
+        profile_dict=self.__profile.get_profile_dict
         return profile_dict

@@ -44,7 +44,7 @@ class Profile:
     @property
     def reason(self):
         return self.__reason
-
+    @property
     def get_profile_dict(self):
         return {"file":self.__file,"status":self.__status,"reason":self.__reason,"pages":self.__pages,"text":self.__text,"outcome":self.__outcome,"score":self.__score}
 
