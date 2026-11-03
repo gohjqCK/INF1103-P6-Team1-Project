@@ -22,7 +22,10 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Copy all the program files (main.py and the four managers)
+# Copy all the program files and manager modules
 COPY *.py ./
+COPY io_manager_modules ./io_manager_modules
+COPY data_manager_modules ./data_manager_modules
 
 # The program reads resume folders and writes its JSON files in its current folder.
 # Run it from /work and mount your project folder there, so it can see your PDFs and
