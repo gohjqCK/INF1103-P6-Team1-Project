@@ -2,5 +2,9 @@
     {
         "text": "cloud",
         "priority": "must"
+    },
+    {
+        "text": "python",
+        "priority": "important"
     }
 ]
