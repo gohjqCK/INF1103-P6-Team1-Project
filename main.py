@@ -6,6 +6,13 @@ import Data_Manager
 import IO_manager
 import Logic_Manager
 
+from OverallList import OverallList
+from AcceptedList import AcceptedList
+from RejectedList import RejectedList
+from InvalidList import InvalidList
+from ResultsPath import ResultsPath
+from ResultsData import ResultsData
+
 AI_OUTPUT_FILE = "ai_output.json"
 
 def main():
@@ -44,16 +51,19 @@ def main():
             AI_Manager.screen_resumes(rules, resumes, resumes_file="resumes.json", results_file=AI_OUTPUT_FILE)
             IO_manager.display_message("\n[4/4] Validating and ranking results")
             results_path = Path(AI_OUTPUT_FILE)
+            results_path_obj = ResultsPath(Path(AI_OUTPUT_FILE))
 
-            if Logic_Manager.validate_file_exists_func(results_path) == 0 and Logic_Manager.validate_file_type_func(results_path) == 0 and Logic_Manager.validate_file_empty_func(results_path) == 0:
+            if results_path_obj.validate_file_exists_func == 0 and results_path_obj.validate_file_type_func == 0 and results_path_obj.validate_file_empty_func == 0:
                 with open(results_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-
-                
-                if Logic_Manager.validate_resume_func(data) == 0 and Logic_Manager.validate_resume_keys_func(data) == "":      
-                    accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data)
-                    Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume, outDir)
-                    sorted_resume = Logic_Manager.sort_resume_func(accepted_resume)
+                                    
+                results_data= ResultsData(data)
+                if results_data.validate_resume_func == 0 and results_data.validate_resume_keys_func == "":      
+                    accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_online_func(data)
+                    Data_Manager.outputfile_func(accepted_resume.show_profiles, rejected_resume.show_profiles, invalid_resume.show_profiles, outDir)
+                    #Class method to sort score
+                    sorted_resume=accepted_resume.sort_score
+                    #sorted_resume = Logic_Manager.sort_resume_func(accepted_resume)
 
                     IO_manager.display_success("Resumes successfully screened")
                     IO_manager.display_screening_results(sorted_resume, top_n=top_n)
@@ -71,9 +81,10 @@ def main():
             IO_manager.display_error("Cannot connect to Ollama or required models are missing.")
             IO_manager.display_message("\n[4/4] Running offline rudimentry screening (Less accurate)")
             offline_resumes = Logic_Manager.offline_screening_func(resumes, rules)
-            accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(offline_resumes)
-            Data_Manager.outputfile_func(accepted_resume, rejected_resume, invalid_resume, outDir)
-            sorted_resume = Logic_Manager.sort_resume_func(offline_resumes)
+            accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_offline_func(offline_resumes)
+            Data_Manager.outputfile_func(accepted_resume.show_profiles, rejected_resume.show_profiles, invalid_resume.show_profiles, outDir)
+            sorted_resume=accepted_resume.sort_score
+            #sorted_resume = Logic_Manager.sort_resume_func(offline_resumes)
 
             IO_manager.display_success("Offline screening complete")
             IO_manager.display_screening_results(sorted_resume, top_n=top_n)

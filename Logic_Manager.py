@@ -3,68 +3,17 @@ import copy
 import json
 from pathlib import Path
 from json.decoder import JSONDecodeError
-from Logic_Manager_Class_Folder.Resume import Resume
-from Logic_Manager_Class_Folder.Profile import Profile
-from Logic_Manager_Class_Folder.OverallList import OverallList
-from Logic_Manager_Class_Folder.AcceptedList import AcceptedList
-from Logic_Manager_Class_Folder.RejectedList import RejectedList
-from Logic_Manager_Class_Folder.InvalidList import InvalidList
-from Logic_Manager_Class_Folder.ResumeEvaluator import ResumeEvaluator
+from Resume import Resume
+from Profile import Profile
+from OverallList import OverallList
+from AcceptedList import AcceptedList
+from RejectedList import RejectedList
+from InvalidList import InvalidList
+from ResumeEvaluator import ResumeEvaluator
 
 '''===========Logic_Manager Rules:=================
     variable resume only used in for loops
     _func are functions to be called'''
-'''
-class ResumeList(ABC):
-    def __init__(self,resume_list):
-        self.__resume_list=resume_list
-
-    def get_score_list(self):
-        score_list=[]
-        resume_list=self.__resume_list
-        for resume in resume_list:
-            score_list.append(resume.get_score())
-        return score_list
-
-    def get_filtered_resume_list(self):
-        pass
-        resume_list=self.__resume_list
-        #for resume in resume_list:
-            #status= 
-            '''
-
-'''class AcceptedList():
-    def __init__(self,resume_list):
-        self.__resume_list=resume_list'''
-
-'''class RejcetedList():
-    def __init__(self,resume_list):
-        self.__resume_list=resume_list'''
-
-'''class InvalidList():
-    def __init__(self,resume_list):
-        self.__resume_list=resume_list'''
-
-'''class Resume():
-    def __init__(self,file,status,reason,pages,text,outcome,score):
-        self.__filename=file
-        self.__status=status
-        self.__reason=reason
-        self.__pages=pages
-        self.__text=text
-        self.__outcome=outcome
-        self.__score=score
-
-    def get_status(self):
-        return self.__status
-    def get_reason(self):
-        return self.__reason
-    def get_text(self):
-        return self.__text
-    def get_outcome(self):
-        return self.__outcome
-    def get_score(self):
-        return self.__score'''
     
 
 #prints error detected
@@ -134,12 +83,29 @@ def validate_resume_keys_func(resume_list):
         resume_count+=1
     return result
 
+def combined_list_func():
+    return {"acceptedList":[],"rejectedList":[],"invalidList":[]}
+
+def create_classes(combinedList):
+
+    #creating classes
+    acceptedList=AcceptedList()
+    rejectedList=RejectedList()
+    invalidList=InvalidList()
+    #assign list
+    acceptedList.list=combinedList["acceptedList"]
+    rejectedList.list=combinedList["rejectedList"]
+    invalidList.list=combinedList["invalidList"]
+
+    return [acceptedList,rejectedList,invalidList]
+
+
 #Remove invalid resumes and resumes that scored 0.0
-def filter_resume_func(resume_list):
+def filter_resume_online_func(resume_list):
     #Copies the data
     resume_list_copy=copy.deepcopy(resume_list)
     #to allocate stringname
-    combinedList={"acceptedList":[],"rejectedList":[],"invalidList":[]}
+    combinedList=combined_list_func()
     for raw_resume in resume_list_copy:
         #create a resume
         resume= Resume(raw_resume)
@@ -149,83 +115,26 @@ def filter_resume_func(resume_list):
         stringname=str(resumeEvaluate.category())+"List"
         
         combinedList[stringname].append(resume)
-
     #creating classes
-    acceptedList=AcceptedList()
-    rejectedList=RejectedList()
-    invalidList=InvalidList()
-    #adding the combined list to the respective class
-    acceptedList.list=combinedList["acceptedList"]
-    rejectedList.list=combinedList["rejectedList"]
-    invalidList.list=combinedList["invalidList"]
+    return create_classes(combinedList)
 
-    #appending all classes to the overallList class
-    overallList=OverallList()
-    overallList.list_overall=acceptedList.output_dict
-    overallList.list_overall=rejectedList.output_dict
-    overallList.list_overall=invalidList.output_dict
-    return overallList.list_overall
+def filter_resume_offline_func(resume_list):
+    #Copies the data
+    resume_list_copy=copy.deepcopy(resume_list)
+    combinedList=combined_list_func()
+    for raw_resume in resume_list_copy:
+        #Create a profile(offline resume)
+        profile=Profile(raw_resume)
+        #Decide which list to put the resume in
+        profileEvaluate=ResumeEvaluator(profile)
+        stringname=str(profileEvaluate.category())+"List"
+        combinedList[stringname].append(profile)
+    return create_classes(combinedList)
 
-'''#Orders the list from highest to lowest score // using merge sort
-def sort_resume_func(resume_list):
-    score_list=extract_scores_func(resume_list)
-    sorted_scores=sort_score_func(score_list)
-    sorted_resume_list=link_score_to_list_func(sorted_scores, resume_list)
-    return sorted_resume_list
+'''def filter_resume_func(resume_list,mode):
+    function_name=f"filter_resume_{mode}_func"
+    function_name.__name__'''
 
-
-#Extract scores of resumes
-def extract_scores_func(resume_list):
-    score_list=[]
-    for resume in resume_list:
-        dictionary_value=resume["score"]
-        score_list.append(dictionary_value)
-    return score_list
-
-#Merge sort scores
-def sort_score_func(score_list):
-    # Base case: A list of zero or one elements is already sorted
-    if len(score_list) <= 1:
-        return score_list
-    
-    # Divide: Split the array into two halves
-    mid = len(score_list) // 2
-    left_half = score_list[:mid]
-    right_half = score_list[mid:]
-    
-    # Conquer: Recursively sort both halves
-    sorted_left = sort_score_func(left_half)
-    sorted_right = sort_score_func(right_half)
-    
-    # Merge: Combine the sorted halves
-    return merge(sorted_left, sorted_right)
-
-def merge(left, right):
-    result = []
-    i = j = 0
-    # Compare elements from both parts and build the sorted list
-    while i < len(left) and j < len(right):
-        if left[i] > right[j]:
-            result.append(left[i])
-            i += 1
-        else:
-            result.append(right[j])
-            j += 1
-    # Append any remaining elements left over from either list
-    result.extend(left[i:])
-    result.extend(right[j:])
-    return result'''
-'''
-def link_score_to_list_func(sorted_scores, resume_list):
-    for resume in resume_list:
-        #finds the value of score in loop resume
-        resume_score=resume["score"]
-        #finds the index of the score on the sorted list
-        index_position= sorted_scores.index(resume_score)
-        #Replace the sorted score with the resume
-        sorted_scores[index_position]=resume
-    return sorted_scores
-'''
 
 def offline_screening_func(resume_list, rules):
     for resume in resume_list:

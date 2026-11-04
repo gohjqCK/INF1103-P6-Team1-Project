@@ -6,19 +6,20 @@ class ResultsPath:
     def __init__(self,ai_output_file):
         self.__results_path=ai_output_file
 
+    @property
     def validate_file_exists_func(self):
         if self.__results_path.is_file():
             return 0
         else:
             return"LM: The file does not exist. Either AI Output wrong file name or did not output at all"
-    
+    @property
     #Checks if file is json type
     def validate_file_type_func(self):
         if self.__results_path.suffix.lower()==".json":
             return 0
         else:
             return "LM: AI output wrong file type"
-    
+    @property
     #Checks if json file is empty
     def validate_file_empty_func(self):
         try:

@@ -1,0 +1,281 @@
+[
+  {
+    "file": "Adriana-Rosario-IT-Manager-Resume (TechieCV.com).pdf",
+    "name": "Adriana Rosario",
+    "email": "itmanager@gmail.com",
+    "phone": "+1 414-555-0182",
+    "outcome": "scored",
+    "score": 57.1,
+    "reason": "Meets 1/2 rules. Missing: Python",
+    "summary": "IT Manager with 13 years of experience in leading IT operations in Fortune-500 financial services, healthcare, and regulated enterprise IT, specializing in IT strategy, service delivery leadership, and budget ownership.",
+    "skills": [
+      "ITIL 4",
+      "Agile-ITSM hybrid",
+      "change management",
+      "problem management",
+      "service request management",
+      "Microsoft 365",
+      "Entra ID",
+      "ServiceNow",
+      "SOC 2 Type II",
+      "ISO 27001",
+      "HIPAA",
+      "GDPR",
+      "NIST CSF",
+      "leadership"
+    ],
+    "qualifications": [
+      "B.B.A. in Management Information Systems from University of Wisconsin-Madison",
+      "PMP-aware program leadership"
+    ],
+    "work_experience": [
+      "IT Manager at Northwestern Mutual (Jul 2020 - Present)",
+      "IT Manager at Aurora Health Care (Jul 2015 - Jun 2020)"
+    ],
+    "projects": [
+      "3-year IT roadmap for M365 modernization, Entra ID migration, and ServiceNow rollout",
+      "Regional office buildout",
+      "ERP module rollout",
+      "M&A IT integration for a 200-person acquisition",
+      "Hiring and mentoring 11 IT staff and 4 promotions",
+      "Authored or updated 22 IT policies",
+      "Worked on 28 SOPs and runbooks for 14 clinic sites"
+    ]
+  },
+  {
+    "file": "Casey-Nakamura-System-Administrator-Resume (TechieCV.com).pdf",
+    "name": "Casey Nakamura",
+    "email": "sysadmin@gmail.com",
+    "phone": "+1 3035-2222",
+    "outcome": "scored",
+    "score": 42.9,
+    "reason": "Meets 1/2 rules. Missing: cloud (Ignored 1 unverified claims).",
+    "summary": "System Administrator with 8 years of experience in enterprise IT environments, specializing in Linux and Windows administration, virtualization, and security hardening.",
+    "skills": [
+      "Bash",
+      "Python",
+      "Ansible",
+      "Puppet",
+      "Chef",
+      "PowerShell",
+      "Terraform"
+    ],
+    "qualifications": [
+      "B.S. in Information Technology from University of Colorado Boulder"
+    ],
+    "work_experience": [
+      "Senior Systems Administrator at Lockheed Martin Space",
+      "Systems Administrator at Charter Communications"
+    ],
+    "projects": [
+      "Centralized monitoring on Datadog and Nagios",
+      "Enterprise backup and disaster recovery program on Veeam and Commvault",
+      "Zero-downtime maintenance on VMware vSphere clusters"
+    ]
+  },
+  {
+    "file": "Assistant IT Manager Resume.pdf",
+    "name": "JOHN H. SMITH",
+    "email": "info@greatresumesfast.com",
+    "phone": "800.991.5187",
+    "outcome": "scored",
+    "score": 0.0,
+    "reason": "Meets 0/2 rules. Missing: cloud; Python (Ignored 1 unverified claims).",
+    "summary": "Versatile and hands-on Project Manager with a track record of success in managing complex IT modernization and system integration projects.",
+    "skills": [
+      "Project Management",
+      "Strategic Planning",
+      "Business Process Design",
+      "IT Infrastructure & Standardization",
+      "Risk Management & Risk Mitigation",
+      "Leadership & Performance Enhancement",
+      "Analytical Problem Solving Abilities",
+      "Team Collaboration, Coaching, & Motivation"
+    ],
+    "qualifications": [
+      "Bachelor of Business Administration —Management Information systems",
+      "Information Technology Infrastructure Library (ITIL) Foundations certification",
+      "PMP Training (Project Management Professional)"
+    ],
+    "work_experience": [
+      "VP of Information Technology —Asia Pacific, Brinkley Insurance Company Ltd., Japan (2008—2012)",
+      "IT/BUSINESS INTEGRATION MANAGER —Asia Pacific, Pacific Regional Ltd., Japan (2007—2008)",
+      "REGIONAL MANAGER, IT Service Delivery —Asia Pacific, BNX South Pacific Assurance Co. Ltd., Japan (2006)",
+      "PROJECT MANAGER —Asia Pacific, Canon Tech Solutions Ltd., Japan (2001—2005)",
+      "ROLLOUT PROJECT MANAGER/CONSULTANT, META Ltd., Japan (2000—2001)",
+      "REGIONAL PROJECT MANAGER/REGIONAL IS/IT MANAGER —Asia Pacific, Resource Asia Pacific Ltd., Japan, China (1990—2000)"
+    ],
+    "projects": [
+      "Led and implemented complex projects and Global teams —mitigated risks, managed requirements, and worked with project stakeholders while managing expectations at the department and project levels.",
+      "Directed the relocation of a regional data center and company regional office from Japan to Thailand; devised startup planning and managed operations within given resources, time, and budget.",
+      "Managed global teams including up to 10 direct and indirect reports; developed staffing plans, managed workloads, defined deliverables, hired resources, conducted performance reviews, and ensured compliance with established company policies.",
+      "Managed a cross-functional team of 10 members. Designed and developed IT strategy to support a Regional user base of more than 1,500 users throughout Japan, Beijing, Shanghai, Hong Kong, Australia, and India.",
+      "Led a team of 45 Level I and Level II help desk support team members providing outstanding quality IT services to 10 countries throughout Asia Pacific and serving a user base of more than 2,000."
+    ]
+  },
+  {
+    "file": "Jordan-Reyes-IT-Support-Specialist-Resume (TechieCV.com).pdf",
+    "name": "Jordan Reyes",
+    "email": "jordan.reyes@gmail.com",
+    "phone": "+1 602-555-0188",
+    "outcome": "scored",
+    "score": 42.9,
+    "reason": "Meets 1/2 rules. Missing: cloud (Ignored 1 unverified claims).",
+    "summary": "IT Support Specialist with 6 years of experience in enterprise end-user computing environments, specializing in endpoint deployment, identity lifecycle, and white-glove user support.",
+    "skills": [
+      "ServiceNow",
+      "Jira Service Management",
+      "Microsoft Intune",
+      "Windows Autopilot",
+      "Active Directory",
+      "Entra ID",
+      "Microsoft 365",
+      "BeyondTrust (Bomgar)",
+      "PowerShell",
+      "Bash",
+      "Python (basic)"
+    ],
+    "qualifications": [
+      "B.S. in Information Technology from Arizona State University"
+    ],
+    "work_experience": [
+      "Senior IT Support Specialist at Carvana (Sep 2022 - Present)",
+      "IT Support Specialist at GoDaddy (Aug 2019 - Aug 2022)"
+    ],
+    "projects": [
+      "Built the team's service-desk knowledge base in ServiceNow",
+      "Authoring and maintaining 220+ KB articles plus onboarding playbooks for new hires",
+      "Coordinated onboarding and offboarding for 380+ new hires and 190 offboardings"
+    ]
+  },
+  {
+    "file": "Senior IT Project Manager Resume (Invalid example).pdf",
+    "name": "",
+    "email": "",
+    "phone": "xxxxxxxxxxx",
+    "outcome": "scored",
+    "score": 0.0,
+    "reason": "Meets 0/2 rules. Missing: cloud; Python (Ignored 1 unverified claims).",
+    "summary": "Experienced Senior IT Project Manager with 14 years of success, leading diverse technology projects. Holds multiple certifications including PMP and PRINCE2 Practitioner. Managed large-scale, top-priority, and complex technology initiatives for F500 clients. Expert in IT technologies, software engineering, and project management methodologies.",
+    "skills": [
+      "Project Management",
+      "IT Technologies",
+      "Software Engineering",
+      "Development & Testing Methodologies",
+      "Enterprise Architecture",
+      "Quality Processes",
+      "Communication",
+      "Risk Management",
+      "Budget Management",
+      "Global Delivery Model"
+    ],
+    "qualifications": [
+      "MBA Degree - Hanze University of Applied Science, Groningen, Netherlands",
+      "Master of Engineering (Chemical) - Indian Institute of Science, Bangalore",
+      "Bachelor of Engineering (Chemical) - Utkal University, Orissa"
+    ],
+    "work_experience": [
+      "Senior Project Manager - Infosys Technologies Ltd, Netherlands (2007 - Present)",
+      "Senior Project Manager - Infosys Technologies Ltd, Mauritius DC (2005 - 2007)",
+      "Project Manager - Infosys Technologies Ltd, Mauritius DC (2003 - 2005)",
+      "Project Manager - Infosys Technologies Ltd, Bangalore & Lugarno (2001 - 2002)",
+      "Programmer Analyst - Infosys Technologies Ltd, Bangalore & UK (1999 - 2001)",
+      "Developer - Infosys Technologies Ltd, Bangalore & UK (1995 - 1999)"
+    ],
+    "projects": [
+      "Managed 10+ IT projects in the domain of Application development, Application support, Technology migration, Reengineering and IT consultancy",
+      "Managed and oversaw all IT projects, executed by a team of 60+ members",
+      "Managed Project application development & support services along with a team of 20+ members"
+    ]
+  },
+  {
+    "file": "Tech Professional Resume.pdf",
+    "name": "Sameer Shah",
+    "email": "hello@reallygreatsite.com",
+    "phone": "123-456-7890",
+    "outcome": "scored",
+    "score": 0.0,
+    "reason": "Meets 0/2 rules. Missing: cloud; Python",
+    "summary": "Practical digital support candidate with experience in IT systems, digital communication, and workplace support, including file organization and basic documentation.",
+    "skills": [
+      "IT support",
+      "Helpdesk assistance",
+      "Account setup",
+      "Troubleshooting",
+      "System documentation",
+      "Digital records",
+      "User support",
+      "Process coordination",
+      "Digital Skills Certificate",
+      "Workplace IT Support Course",
+      "Cyber Awareness Essentials"
+    ],
+    "qualifications": [
+      "BTEC Diploma — Digital Skills and Business Support",
+      "Digital Skills Certificate",
+      "Workplace IT Support Course",
+      "Cyber Awareness Essentials"
+    ],
+    "work_experience": [
+      "IT Support Assistant at Circuit Systems (Mar 2022 – Present)",
+      "IT Support Assistant at Greenfield College (Sep 2020 – Feb 2022)",
+      "IT Support Assistant at Streamline Systems (Jun 2019 – Aug 2020)"
+    ],
+    "projects": [
+      "Internal File Organisation Project",
+      "Basic Website Content Update Project"
+    ]
+  },
+  {
+    "file": "UNC CS Technical Resume.pdf",
+    "name": "Ada Lovelace",
+    "email": "adalove@gmail.com",
+    "phone": "(919) 110-0110",
+    "outcome": "scored",
+    "score": 100.0,
+    "reason": "Meets all rules.",
+    "summary": "Ada Lovelace is a recent Computer Science graduate with experience in software development and teaching. She has a strong background in Python and other programming languages, and has worked on projects involving cloud computing and AI tools.",
+    "skills": [
+      "Python (Pandas, Matplotlib, Plotly, pytest)",
+      "Java",
+      "JavaScript",
+      "C",
+      "Swift",
+      "TypeScript",
+      "Node.js",
+      "React.js",
+      "AngularJS",
+      "Docker",
+      "PyTorch",
+      "Git",
+      "GitHub Copilot",
+      "OpenAI API"
+    ],
+    "qualifications": [
+      "B.S. in Computer Science, Minors in Data Science and Studio Art from University of North Carolina at Chapel Hill (May 2027)",
+      "Dean’s List, Honors Carolina"
+    ],
+    "work_experience": [
+      "Software Development Engineer Intern at Amazon (Seattle, WA, June 2026 - Present)",
+      "Undergraduate Teaching Assistant - Grading Lead at UNC-Chapel Hill Department of Computer Science (Chapel Hill, NC, Aug. 2025 - May 2026)",
+      "Software Engineering Intern at Fidelity Investments (Durham, NC, May 2025 - Aug. 2025)"
+    ],
+    "projects": [
+      "MusicBoxd (iOS App with dynamic Swift interface, real-time database retrieval using Firebase, Genius’ API for song and artist retrieval, HackNC, Oct. 2025)"
+    ]
+  },
+  {
+    "file": "IT Infrastructure Administrator Resume (Invalid example).pdf",
+    "name": "",
+    "email": "",
+    "phone": "",
+    "outcome": "invalid",
+    "score": null,
+    "reason": "Not a resume (job_description): The document describes job responsibilities, requirements, and qualifications without including a candidate's personal information.",
+    "summary": "",
+    "skills": [],
+    "qualifications": [],
+    "work_experience": [],
+    "projects": []
+  }
+]

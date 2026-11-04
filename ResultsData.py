@@ -2,6 +2,7 @@ class ResultsData:
     def __init__(self,results_data):
         self.__results_data=results_data
 
+    @property
     #Validate data type of resume list
     def validate_resume_func(self):
         #expected data type:List
@@ -18,7 +19,7 @@ class ResultsData:
                 err_msg="Resume in "+ str(resume_count) +" position is not dictionary"
                 return err_msg
         return 0
-
+    @property
     #Check if keys exists: "outcome" and "score"
     def validate_resume_keys_func(self):
         result=""
