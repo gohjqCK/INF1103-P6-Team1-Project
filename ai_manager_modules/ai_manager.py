@@ -7,6 +7,8 @@ from ai_manager_modules.ai_manager_llm_client import LLMClient
 from ai_manager_modules.ai_manager_llm_error import LLMError
 from ai_manager_modules.ai_manager_resume_scorer import ResumeScorer
 from ai_manager_modules.ai_manager_screening_task import ScreeningTask
+from ai_manager_modules.ai_manager_summary_builder import SummaryBuilder
+from ai_manager_modules.ai_manager_summary_task import SummaryTask
 
 
 class AIManager:
@@ -16,6 +18,7 @@ class AIManager:
         self._client = client
         self._max_workers = max_workers
         self._keyword_task = KeywordTask(client)
+        self._summary_task = SummaryTask(client)
 
     def check_connection(self) -> bool:
         """Returns True if the AI is ready to answer."""
@@ -52,6 +55,18 @@ class AIManager:
                     ordered.append(entry)
         return ordered
 
+    def create_summary(self, rules: list[dict], results: list[dict], top_n: int = 3) -> dict:
+        """Returns the summary report. If the AI fails, the report keeps its numbers and overall_summary stays empty."""
+        report = SummaryBuilder(rules, self._client.model_name, top_n).build(results)
+        checked = report["totals"]["scored"] + report["totals"]["rejected"]
+        if checked > 0:
+            try:
+                report["overall_summary"] = self._summary_task.run(report)
+            except LLMError:
+                pass
+        return report
+
+
     def _screen_one(self, task: ScreeningTask, scorer: ResumeScorer, resume: dict) -> dict:
         """Screens one resume. Any failure marks only this resume invalid, so the batch carries on."""
         entry = self._empty_entry(resume)
@@ -76,6 +91,9 @@ class AIManager:
             return entry
 
         entry["reason"] = outcome["reason"]
+        entry["rules_met"] = outcome["rules_met"]
+        entry["rules_missed"] = outcome["rules_missed"]
+        entry["rejected_by"] = outcome["rejected_by"]
         if outcome["rejected_by"]:
             entry["outcome"] = "rejected"
             return entry
@@ -101,4 +119,9 @@ class AIManager:
             "qualifications": [],
             "work_experience": [],
             "projects": [],
+            "rules_met": [],
+            "rules_missed": [],
+            "rejected_by": [],
         }
+
+    

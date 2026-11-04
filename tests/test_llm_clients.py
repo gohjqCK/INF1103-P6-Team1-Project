@@ -17,6 +17,10 @@ class TestLLMClients(unittest.TestCase):
         client._llm = SimpleNamespace(invoke=lambda prompt: SimpleNamespace(content=content))
         return client
 
+    def test_ollama_client_reports_its_model(self):
+        self.assertEqual(OllamaClient().model_name, OllamaClient.DEFAULT_MODEL)
+ 
+
     def test_interface_cannot_be_created_directly(self):
         with self.assertRaises(TypeError):
             LLMClient()

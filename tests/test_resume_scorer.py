@@ -17,6 +17,12 @@ class TestResumeScorer(unittest.TestCase):
         result = ResumeScorer([NETWORKING, CLOUD]).score(checks, "Built a large network")
         self.assertEqual(result["score"], 66.7)
         self.assertEqual(result["reason"], "Meets 1/2 rules. Missing: Has cloud experience")
+        
+    def test_result_lists_rules_met_and_missed(self):
+        checks = [self._yes(1, "Built a large network")]
+        result = ResumeScorer([NETWORKING, CLOUD]).score(checks, "Built a large network")
+        self.assertEqual(result["rules_met"], ["Knows networking"])
+        self.assertEqual(result["rules_missed"], ["Has cloud experience"])
 
     def test_all_rules_met(self):
         checks = [self._yes(1, "Built a network on AWS"), self._yes(2, "Built a network on AWS")]

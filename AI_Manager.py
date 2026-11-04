@@ -23,3 +23,10 @@ def screen_resumes(rules: list[dict], resumes: list[dict], resumes_file: str = "
     with open(results_file, "w", encoding="utf-8") as file:
         json.dump(results, file, indent=2, ensure_ascii=False)
     return results
+
+def create_summary(rules: list[dict], results: list[dict], top_n: int = 3,
+                    summary_file: str = "summary.json") -> dict:
+        report = AIManager(OllamaClient()).create_summary(rules, results, top_n)
+        with open(summary_file, "w", encoding="utf-8") as file:
+            json.dump(report, file, indent=2, ensure_ascii=False)
+        return report

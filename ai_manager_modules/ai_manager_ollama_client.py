@@ -29,6 +29,11 @@ class OllamaClient(LLMClient):
             num_ctx=8192,
             client_kwargs={"timeout": timeout_seconds},
         )
+        
+    @property
+    def model_name(self) -> str:
+        return self._model
+
 
     def is_available(self) -> bool:
         try:

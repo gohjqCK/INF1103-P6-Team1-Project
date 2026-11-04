@@ -76,8 +76,9 @@ class ResumeScorer:
 
         score = round(earned / total * 100, 1) if total > 0 else 0.0
         reason = self._build_reason(met, missed, rejected_by, unproven)
-        return {"score": score, "rejected_by": rejected_by, "reason": reason}
-
+        return {"score": score, "rejected_by": rejected_by, "reason": reason,
+                "rules_met": met, "rules_missed": missed}
+    
     @staticmethod
     def _build_reason(met: list[str], missed: list[str], rejected_by: list[str], unproven: list[int]) -> str:
         if rejected_by:
