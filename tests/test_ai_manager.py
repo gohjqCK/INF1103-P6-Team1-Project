@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
-from AI_Manager import AIManager
+from ai_manager_modules.ai_manager import AIManager
 from ai_manager_modules.ai_manager_llm_client import LLMClient
 from ai_manager_modules.ai_manager_llm_error import LLMError
 from tests.fake_llm_client import FakeLLMClient
@@ -45,9 +45,10 @@ class TestAIManager(unittest.TestCase):
         self.assertEqual(results[0]["qualifications"], ["BSc"])
 
     def test_verified_ai_answer_earns_the_rule(self):
-        checks = [{"id": 2, "evidence": "Cisco routers", "shows": True}]
+        rules = [{"text": "Knows networking", "priority": "must", "keywords": ["network"]}]
+        checks = [{"id": 1, "evidence": "Built a large network", "shows": True}]
         client = FakeLLMClient(reply=self._resume_reply(checks=checks))
-        results = AIManager(client).screen_resumes(RULES[1:2], [make_resume("a.pdf", "Managed Cisco routers")])
+        results = AIManager(client).screen_resumes(rules, [make_resume("a.pdf", "Built a large network")])
         self.assertEqual(results[0]["score"], 100.0)
 
     def test_made_up_quote_earns_nothing(self):
