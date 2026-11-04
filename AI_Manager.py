@@ -1,88 +1,17 @@
 # AI Manager: checks, scores and summarises resumes with a local AI model (Ollama).
 import json
-import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Optional
 
-import ollama
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_ollama import ChatOllama
+from ai_manager_modules.ai_manager_keyword_task import KeywordTask
+from ai_manager_modules.ai_manager_llm_client import LLMClient
+from ai_manager_modules.ai_manager_llm_error import LLMError
+from ai_manager_modules.ai_manager_ollama_client import OllamaClient
+from ai_manager_modules.ai_manager_screening_task import ScreeningTask
 from ai_manager_modules.ai_manager_text_matcher import TextMatcher
 
-
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-MODEL_NAME = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
-
 PRIORITY_WEIGHTS = {"must": 4, "important": 3, "nice": 2, "can consider": 1}
-DOCUMENT_TYPES = ["resume", "job_description", "guide_or_sample", "other"]
-GENERAL_WORDS = {"experience", "years", "year", "skills", "skill", "has", "have", "knowledge",
-                 "certification", "certifications", "certified", "record", "records", "related", "field", "good", "strong"}
 
-# Combined Prompt: Analyzes document type, checks rules, and extracts key candidate info in 1 pass.
-COMBINED_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "You are an impartial resume screening assistant. Today is {today}.\n"
-     "Analyze the given document and perform three tasks:\n"
-     "1. Identify document_type: 'resume', 'job_description', 'guide_or_sample', or 'other'. "
-     "If it is NOT a resume, set checks to [] and candidate_info to null.\n"
-     "2. If it is a resume, check it ONLY against the provided numbered rules. "
-     "Do not infer or guess. For evidence, quote exact text from the resume or use \"\".\n"
-     "3. Extract key details into candidate_info (ignore personal attributes like age/gender/ethnicity).\n\n"
-     "Reply strictly in this JSON format:\n"
-     '{{\n'
-     '  "document_type": "resume|job_description|guide_or_sample|other",\n'
-     '  "doc_type_reason": "<one sentence explanation>",\n'
-     '  "checks": [{{"id": 1, "evidence": "<exact quote or empty>", "shows": true|false}}],\n'
-     '  "candidate_info": {{\n'
-     '    "name": "...", "email": "...", "phone": "...", "summary": "<2-3 sentences>",\n'
-     '    "skills": ["..."], "qualifications": ["..."], "work_experience": ["..."], "projects": ["..."]\n'
-     '  }}\n'
-     '}}'),
-    ("human", "Rules:\n{rules}\n\nDocument:\n{resume}"),
-])
-
-# Keyword Prompt: Generates a list of keywords for a given rule to help match resumes.
-KEYWORD_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "You help a hiring team check resumes against their rules. "
-     "For the rule given, list 3 to 12 SHORT keywords (one or two words each) that a sentence from a resume "
-     "would contain if it is about this rule. Include:\n"
-     "- the main word and its other forms (singular, plural, -ing)\n"
-     "- abbreviations and their full names\n"
-     "- well-known products, tools or vendors that clearly prove the rule\n"
-     "Do not include general words such as experience, years, skills, has, knowledge or certification.\n"
-     'Example: for the rule "Knows relational databases" the keywords could be '
-     '["database", "databases", "SQL", "MySQL", "PostgreSQL", "Oracle", "SQL Server"].\n'
-     "If the rule is too general to check with specific words, give an empty list.\n"
-     "Reply ONLY with JSON in exactly this format: "
-     '{{"keywords": ["<keyword>", "..."]}}'),
-    ("human", "Rule: {rule}"),
-])
-
-# This functions checks if the Ollama server is reachable
-def check_connection() -> bool:
-    try:
-        client = ollama.Client(host=OLLAMA_HOST)
-        downloaded = [m.model for m in client.list().models]
-    except Exception:
-        print(f"Cannot reach Ollama at {OLLAMA_HOST}.")
-        return False
-
-    if MODEL_NAME not in downloaded and MODEL_NAME + ":latest" not in downloaded:
-        print(f"Model '{MODEL_NAME}' is not downloaded.")
-        return False
-    return True
-
-# Set up a ChatOllama instance with the specified model and parameters
-def get_llm() -> ChatOllama:
-    return ChatOllama(
-        model=MODEL_NAME,
-        base_url=OLLAMA_HOST,
-        temperature=0,
-        format="json",
-        seed=42,
-        num_ctx=8192,
-    )
 
 def evidence_is_valid(evidence: str, resume_text: str, keywords: list[str]) -> bool:
     if not evidence or not TextMatcher(resume_text).contains(evidence):
@@ -97,57 +26,6 @@ def rule_text_in_resume(rule_text: str, resume_text: str) -> bool:
     return TextMatcher(resume_text).has_any_word([words, words + "s"])
 
 
-
-# --- Rule Keywords ---
-def add_keywords(rules: list[dict]) -> list[dict]:
-    # Ask the AI for keywords for each rule (one small call per rule), clean them, and add other word forms.
-    for rule in rules:
-        # 1. Ask the AI for this rule's keywords
-        try:
-            prompt = KEYWORD_PROMPT.invoke({"rule": rule["text"]})
-            suggested = json.loads(get_llm().invoke(prompt).content).get("keywords", [])
-        except Exception:
-            suggested = []      # no keywords: this rule falls back to the quote check only
-        if not isinstance(suggested, list):
-            suggested = []
-
-        # 2. Clean the list: keep a keyword only if it has a useful word (not just "2 years")
-        keywords = []
-        for word in suggested:
-            word = str(word).strip()
-            useful = []
-            for part in word.lower().split():
-                if not part.isdigit() and part not in GENERAL_WORDS:
-                    useful.append(part)
-            if len(useful) > 0 and word not in keywords:
-                keywords.append(word)
-
-        # 3. Add other forms of lower-case single words, e.g. "networking" -> "network", "networks"
-        forms = []
-        for word in keywords:
-            if word.islower() and " " not in word and len(word) >= 4:
-                if word.endswith("ing"):
-                    forms.append(word[:-3])
-                    forms.append(word[:-3] + "s")
-                elif word.endswith("s"):
-                    forms.append(word[:-1])
-                else:
-                    forms.append(word + "s")
-        for form in forms:
-            if form not in keywords:
-                keywords.append(form)
-
-        # 4. Save the keywords on the rule and show them
-        rule["keywords"] = keywords
-        if len(keywords) > 0:
-            print(f"Keywords for '{rule['text']}': " + ", ".join(keywords))
-        else:
-            print(f"Keywords for '{rule['text']}': (quote check only)")
-
-    return rules
-
-
-# --- Single-Pass Resume Screening ---
 def score_resume(rules: list[dict], checks: list[dict], resume_text: str) -> dict:
     shown, unproven = [], []
     for check in checks:
@@ -205,111 +83,118 @@ def score_resume(rules: list[dict], checks: list[dict], resume_text: str) -> dic
 
     return {"score": score, "rejected_by": rejected_by, "musts_missed": musts_missed, "reason": reason}
 
-# Screens a single resume against the rules and returns the result as a dictionary.
-def screen_one(rules: list[dict], resume: dict) -> dict:
-    entry = {"file": resume["file"], "name": "", "email": "", "phone": "",
-             "outcome": "", "score": None, "reason": "",
-             "summary": "", "skills": [], "qualifications": [], "work_experience": [], "projects": []}
 
-    if resume.get("status") == "invalid":
-        entry["outcome"] = "invalid"
-        entry["reason"] = resume["reason"]
-        return entry
+class AIManager:
+    """The AI Manager's public interface: checks the connection, adds keywords and screens resumes."""
 
-    rules_text = "\n".join(f"{i+1}. {r['text']}" for i, r in enumerate(rules))
-    today = date.today().strftime("%d %B %Y")
+    def __init__(self, client: LLMClient, max_workers: int = 4):
+        self._client = client
+        self._max_workers = max_workers
 
-    try:
-        prompt = COMBINED_PROMPT.invoke({"today": today, "rules": rules_text, "resume": resume["text"]})
-        result = json.loads(get_llm().invoke(prompt).content)
-        
-        # "or" swaps a missing / null value for a safe default, so null never crashes the program
-        doc_type = str(result.get("document_type") or "unknown").lower()
-        if doc_type != "resume":
-            resume["status"] = "invalid"
-            resume["reason"] = f"Not a resume ({doc_type}): {result.get('doc_type_reason') or ''}"
-            entry["outcome"] = "invalid"
-            entry["reason"] = resume["reason"]
+    def check_connection(self) -> bool:
+        """Returns True if the AI is ready to answer."""
+        return self._client.is_available()
+
+    def add_keywords(self, rules: list[dict]) -> list[dict]:
+        """Adds a "keywords" list to every rule. A rule the AI fails on gets an empty list."""
+        task = KeywordTask(self._client)
+        for rule in rules:
+            try:
+                rule["keywords"] = task.run(rule["text"])
+            except LLMError:
+                rule["keywords"] = []
+        return rules
+
+    def screen_resumes(self, rules: list[dict], resumes: list[dict],
+                       on_result: Optional[Callable[[dict], None]] = None) -> list[dict]:
+        """Screens every resume and returns the results: scored first, then rejected, then invalid."""
+        task = ScreeningTask(self._client, rules)
+
+        def screen_and_report(resume: dict) -> dict:
+            entry = self._screen_one(task, rules, resume)
+            if on_result is not None:
+                on_result(entry)
             return entry
 
-        # Rules Check & Scoring (no checks at all means the AI skipped the rules, so the score can't be trusted)
-        checks = result.get("checks")
-        if not isinstance(checks, list):
-            resume["status"] = "invalid"
-            resume["reason"] = "The AI's reply did not include the rule checks."
+        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
+            entries = list(executor.map(screen_and_report, resumes))
+
+        ordered = []
+        for outcome in ["scored", "rejected", "invalid"]:
+            for entry in entries:
+                if entry["outcome"] == outcome:
+                    ordered.append(entry)
+        return ordered
+
+    def _screen_one(self, task: ScreeningTask, rules: list[dict], resume: dict) -> dict:
+        """Screens one resume. Any failure marks only this resume invalid, so the batch carries on."""
+        entry = self._empty_entry(resume)
+
+        if resume.get("status") == "invalid":
             entry["outcome"] = "invalid"
-            entry["reason"] = resume["reason"]
+            entry["reason"] = resume.get("reason", "")
             return entry
 
-        outcome = score_resume(rules, checks, resume["text"])
+        try:
+            result = task.run(resume)
+
+            if result["document_type"] != "resume":
+                entry["outcome"] = "invalid"
+                entry["reason"] = f"Not a resume ({result['document_type']}): {result['doc_type_reason']}"
+                return entry
+
+            outcome = score_resume(rules, result["checks"], resume["text"])
+        except Exception as error:
+            entry["outcome"] = "invalid"
+            entry["reason"] = f"Processing failed: {error}"
+            return entry
+
         entry["reason"] = outcome["reason"]
-
         if outcome["rejected_by"]:
             entry["outcome"] = "rejected"
-        else:
-            entry["outcome"] = "scored"
-            entry["score"] = outcome["score"]
+            return entry
 
-            # Extract Info Validation
-            info = result.get("candidate_info") or {}
-            if not isinstance(info, dict):
-                info = {}
+        entry["outcome"] = "scored"
+        entry["score"] = outcome["score"]
+        entry.update(result["candidate_info"])
+        return entry
 
-            matcher = TextMatcher(resume["text"])
-
-            for field in ["name", "email", "phone"]:
-                val = str(info.get(field) or "")      # null becomes "" (not the text "None")
-                if matcher.contains(val):
-                    entry[field] = val
-
-            entry["summary"] = str(info.get("summary") or "")
-
-            # Categories: a null or non-list value becomes an empty list instead of crashing
-            for cat in ["qualifications", "work_experience", "projects", "skills"]:
-                items = info.get(cat) or []
-                if not isinstance(items, list):
-                    items = []
-                if cat == "skills":
-                    # Only keep skills that really appear in the resume
-                    entry[cat] = [str(s) for s in items if isinstance(s, str) and matcher.contains(s)]
-                else:
-                    entry[cat] = [str(x) for x in items if isinstance(x, (str, int))]
-
-    except Exception as error:
-        resume["status"] = "invalid"
-        resume["reason"] = f"Processing failed: {error}"
-        entry["outcome"] = "invalid"
-        entry["reason"] = resume["reason"]
-
-    return entry
+    @staticmethod
+    def _empty_entry(resume: dict) -> dict:
+        """Returns a result with every field other managers expect."""
+        return {
+            "file": resume.get("file", ""),
+            "name": "",
+            "email": "",
+            "phone": "",
+            "outcome": "",
+            "score": None,
+            "reason": "",
+            "summary": "",
+            "skills": [],
+            "qualifications": [],
+            "work_experience": [],
+            "projects": [],
+        }
 
 
-# --- Parallel Batch Runner ---
-def screen_resumes(rules: list[dict], resumes: list[dict],
-                   resumes_file: str = "resumes.json", results_file: str = "ai_output.json", max_workers: int = 4) -> list[dict]:
-    
-    scored, rejected, invalid = [], [], []
+# --- Temporary: main.py still calls these three functions by name. ---
+# Delete them once main.py creates AIManager(OllamaClient()) and calls its methods.
 
-    print(f"Screening {len(resumes)} resumes using up to {max_workers} threads...")
-    
-    # Process resumes concurrently to maximize Ollama GPU/CPU utilization
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_resume = {executor.submit(screen_one, rules, res): res for res in resumes}
-        
-        for future in as_completed(future_to_resume):
-            entry = future.result()
-            print(f"[{entry['file']}] -> Scored:{entry['score']}. Reason: {entry['reason']}")
-            
-            if entry["outcome"] == "scored":
-                scored.append(entry)
-            elif entry["outcome"] == "rejected":
-                rejected.append(entry)
-            else:
-                invalid.append(entry)
+def check_connection() -> bool:
+    return AIManager(OllamaClient()).check_connection()
 
-    results = scored + rejected + invalid
-    with open(results_file, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
 
+def add_keywords(rules: list[dict]) -> list[dict]:
+    return AIManager(OllamaClient()).add_keywords(rules)
+
+
+def screen_resumes(rules: list[dict], resumes: list[dict], resumes_file: str = "resumes.json",
+                   results_file: str = "ai_output.json", max_workers: int = 4) -> list[dict]:
+    def show_progress(entry: dict) -> None:
+        print(f"[{entry['file']}] -> Scored:{entry['score']}. Reason: {entry['reason']}")
+
+    results = AIManager(OllamaClient(), max_workers).screen_resumes(rules, resumes, on_result=show_progress)
+    with open(results_file, "w", encoding="utf-8") as file:
+        json.dump(results, file, indent=2, ensure_ascii=False)
     return results
-
