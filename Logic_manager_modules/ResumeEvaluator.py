@@ -1,4 +1,4 @@
-from Resume import Resume
+from Logic_manager_modules.Resume import Resume
 class ResumeEvaluator:
   def __init__(self,resume):
     self.outcome = resume.get_outcome

@@ -4,14 +4,14 @@ from pathlib import Path
 import AI_Manager
 import Data_Manager
 import IO_manager
-import Logic_Manager
+import Logic_manager_modules.Logic_Manager as Logic_Manager
 
-from OverallList import OverallList
-from AcceptedList import AcceptedList
-from RejectedList import RejectedList
-from InvalidList import InvalidList
-from ResultsPath import ResultsPath
-from ResultsData import ResultsData
+from Logic_manager_modules.OverallList import OverallList
+from Logic_manager_modules.AcceptedList import AcceptedList
+from Logic_manager_modules.RejectedList import RejectedList
+from Logic_manager_modules.InvalidList import InvalidList
+from Logic_manager_modules.ResultsPath import ResultsPath
+from Logic_manager_modules.ResultsData import ResultsData
 
 AI_OUTPUT_FILE = "ai_output.json"
 

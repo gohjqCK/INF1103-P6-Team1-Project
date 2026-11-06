@@ -4,7 +4,7 @@ from pathlib import Path
 import AI_Manager
 import Data_Manager
 import IO_manager
-import Logic_Manager
+import Logic_manager_modules.Logic_Manager as Logic_Manager
 
 AI_OUTPUT_FILE = "ai_output.json"
 

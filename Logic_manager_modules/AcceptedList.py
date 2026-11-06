@@ -1,8 +1,8 @@
-from FilteredList import FilteredList
-from Output_dict import Output_dict
-from Sort_score import Sort_score
-from Profile import Profile
-from Resume import Resume
+from Logic_manager_modules.FilteredList import FilteredList
+from Logic_manager_modules.Output_dict import Output_dict
+from Logic_manager_modules.Sort_score import Sort_score
+from Logic_manager_modules.Profile import Profile
+from Logic_manager_modules.Resume import Resume
 #Format is accepted: [profile1],[profile2]
 class AcceptedList(FilteredList,Output_dict,Sort_score):
     def __init__(self):

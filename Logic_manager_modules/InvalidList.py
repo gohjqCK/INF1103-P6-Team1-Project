@@ -1,7 +1,7 @@
-from FilteredList import FilteredList
-from Output_dict import Output_dict
-from Resume import Resume
-class RejectedList(FilteredList,Output_dict):
+from Logic_manager_modules.FilteredList import FilteredList
+from Logic_manager_modules.Output_dict import Output_dict
+from Logic_manager_modules.Resume import Resume
+class InvalidList(FilteredList,Output_dict):
     def __init__(self):
         super().__init__()
 
@@ -20,10 +20,10 @@ class RejectedList(FilteredList,Output_dict):
     @list.setter
     def list(self,resume):
         self.__resume_list=resume
-        
+
     #Abstract method
     @property
     def output_dict(self):
-        return {"rejected":self.list_to_profile}
+        return {"invalid":self.list_to_profile}
 
 

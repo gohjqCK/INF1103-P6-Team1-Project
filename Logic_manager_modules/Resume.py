@@ -1,4 +1,4 @@
-from Profile import Profile
+from Logic_manager_modules.Profile import Profile
 class Resume:
     def __init__(self,resume_dict):
         self.__name=resume_dict["name"]

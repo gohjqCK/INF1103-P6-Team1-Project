@@ -3,13 +3,13 @@ import copy
 import json
 from pathlib import Path
 from json.decoder import JSONDecodeError
-from Resume import Resume
-from Profile import Profile
-from OverallList import OverallList
-from AcceptedList import AcceptedList
-from RejectedList import RejectedList
-from InvalidList import InvalidList
-from ResumeEvaluator import ResumeEvaluator
+from Logic_manager_modules.Resume import Resume
+from Logic_manager_modules.Profile import Profile
+from Logic_manager_modules.OverallList import OverallList
+from Logic_manager_modules.AcceptedList import AcceptedList
+from Logic_manager_modules.RejectedList import RejectedList
+from Logic_manager_modules.InvalidList import InvalidList
+from Logic_manager_modules.ResumeEvaluator import ResumeEvaluator
 
 '''===========Logic_Manager Rules:=================
     variable resume only used in for loops
