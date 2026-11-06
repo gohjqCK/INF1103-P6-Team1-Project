@@ -12,6 +12,9 @@ class FakeLLMClient(LLMClient):
         self._reply = reply
         self._available = available
         self.prompts_received = []
+    @property
+    def model_name(self) -> str:
+        return "fake-model"
 
     def is_available(self) -> bool:
         return self._available
