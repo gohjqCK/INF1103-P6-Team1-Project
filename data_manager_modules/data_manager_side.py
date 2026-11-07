@@ -17,7 +17,6 @@ class DataManager:
         self.parser = ResumePDFParser()
 
     def process_all_resumes(self, output_file: str = "resumes.json") -> List[Dict[str, Any]]:
-        """Executes full pipeline: Fetch -> Parse -> Sort -> Local JSON -> Supabase Export."""
         db_files = self.db_handler.fetch_resume_files()
         if not db_files:
             print("No records found in 'resume_files' table.")
@@ -26,24 +25,24 @@ class DataManager:
         processed_resumes: List[Resume] = []
         for record in db_files:
             filename = record["file_name"]
-            pdf_url = record.get("pdf_url")
-            print(f"Processing: {filename}...")
+            parsed_text = record.get("parsed_text", "")
+            pages = record.get("pages", 0)
+            invalid_reason = record.get("invalid_reason", "")
 
-            resume_obj = self.parser.parse_from_url(filename, pdf_url)
+            # If text is already stored in DB, instantiate Resume directly without streaming from URL again
+            if parsed_text or invalid_reason:
+                resume_obj = Resume(
+                    file_name=filename,
+                    raw_text=parsed_text,
+                    pages=pages,
+                    error_message=invalid_reason
+                )
+            else:
+                # Fallback: re-parse from URL if DB text is missing
+                pdf_url = record.get("pdf_url")
+                resume_obj = self.parser.parse_from_url(filename, pdf_url)
+
             processed_resumes.append(resume_obj)
-
-        # Sort: valid resumes first, invalid last
-        valid_resumes = [r for r in processed_resumes if r.status == "valid"]
-        invalid_resumes = [r for r in processed_resumes if r.status != "valid"]
-        ordered_resumes = valid_resumes + invalid_resumes
-
-        # Save backup local JSON file
-        self.save_resumes_to_json(ordered_resumes, output_file)
-
-        # Export to Supabase parsed_resumes table
-        self.db_handler.export_parsed_resumes(ordered_resumes)
-
-        return [r.to_dict() for r in ordered_resumes]
 
     @staticmethod
     def save_resumes_to_json(resumes: List[Resume], output_file: str) -> List[Dict[str, Any]]:

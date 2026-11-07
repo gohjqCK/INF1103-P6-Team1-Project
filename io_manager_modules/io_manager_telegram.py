@@ -17,6 +17,8 @@ from io_manager_modules.io_manager_base import BaseIOManager
 from io_manager_modules.telegram_formatter import TelegramFormatter
 from io_manager_modules.telegram_keyboards import TelegramKeyboards
 
+from data_manager_modules.data_manager_supabase_handler import SupabaseHandler
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -52,6 +54,7 @@ class TelegramIOManager(BaseIOManager):
         base_dir: str = "companies",
         data_file: str = "companies.json",
         pipeline_runner: Optional[Any] = None,
+        _db_handler = SupabaseHandler(),
     ):
         if "load_dotenv" in globals():
             load_dotenv()
@@ -248,24 +251,43 @@ class TelegramIOManager(BaseIOManager):
                 self._bot.reply_to(message, "❌ Only <b>.pdf</b> files are accepted.")
                 return
 
-            status_msg = self._bot.reply_to(message, f"⏳ Validating <b>{doc.file_name}</b>...")
+            status_msg = self._bot.reply_to(message, f"⏳ Uploading <b>{doc.file_name}</b> to Supabase...")
             try:
+                # 1. Download raw file bytes from Telegram
                 file_info = self._bot.get_file(doc.file_id)
                 pdf_bytes = self._bot.download_file(file_info.file_path)
-                status, reason, pages = self._parse_pdf_bytes(doc.file_name, pdf_bytes)
 
+                # 2. Extract text and validate limits
+                status, reason, pages, extracted_text = self._parse_pdf_bytes(doc.file_name, pdf_bytes)
+
+                # 3. Upload to Supabase Storage Bucket
+                public_url = self._db_handler.upload_pdf_to_storage(doc.file_name, pdf_bytes)
+
+                # 4. Save to local folder backup
                 save_path = self._company_resumes_folder(comp_name) / doc.file_name
                 save_path.write_bytes(pdf_bytes)
 
+                # 5. Register record into 'resume_files' table with all columns aligned
+                if public_url:
+                    self._db_handler.register_resume_file(
+                        file_name=doc.file_name,
+                        pdf_url=public_url,
+                        company_id=None,  # Pass integer company_id if tracked in your companies.json
+                        parsed_text=extracted_text,
+                        pages=pages,
+                        status=status,
+                        invalid_reason=reason
+                    )
+
                 if status == "valid":
                     self._bot.edit_message_text(
-                        f"✅ <b>{doc.file_name}</b> uploaded ({pages}p, valid text).",
+                        f"✅ <b>{doc.file_name}</b> uploaded to Supabase ({pages}p, valid text).",
                         chat_id=message.chat.id,
                         message_id=status_msg.message_id,
                     )
                 else:
                     self._bot.edit_message_text(
-                        f"⚠️ <b>{doc.file_name}</b> saved but marked <b>INVALID</b>:\n<i>{reason}</i>",
+                        f"⚠️ <b>{doc.file_name}</b> saved to Supabase but marked <b>INVALID</b>:\n<i>{reason}</i>",
                         chat_id=message.chat.id,
                         message_id=status_msg.message_id,
                     )
