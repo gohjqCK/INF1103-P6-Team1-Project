@@ -276,3 +276,89 @@ class ResultPresenter:
             print(f"\n  [!] ERROR: Permission denied reading '{target}'.\n")
         except Exception as err:
             print(f"\n  [!] ERROR: Unexpected error while opening '{target}': {err}\n")
+
+    def display_summary_report(self, summary_file: str = "summary.json") -> None:
+        """Displays formatted AI Summary Report (totals, scores, rule statistics, narrative)."""
+        if not os.path.exists(summary_file) or os.path.getsize(summary_file) == 0:
+            print(f"\n  [!] ERROR: Summary report file '{summary_file}' not found or empty.")
+            print("      Please run AI Screening from Option 4 first to generate the summary report.\n")
+            return
+
+        try:
+            with open(summary_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            totals = data.get("totals", {})
+            scores = data.get("score_statistics") or data.get("scores", {})
+            rules = data.get("rule_statistics") or data.get("rules", [])
+            top_candidates = data.get("top_candidates", [])
+            overall_summary = data.get("overall_summary", "No AI narrative available.")
+            invalid_docs = data.get("invalid_documents", [])
+
+            print("\n" + "=" * 75)
+            print("                       AI SCREENING SUMMARY REPORT")
+            print("=" * 75)
+
+            print("\n  1. EXECUTIVE AI NARRATIVE:")
+            print(f"     {overall_summary}\n")
+
+            total_resumes = totals.get("processed", totals.get("resumes", 0))
+            print("  2. APPLICANT POOL BREAKDOWN:")
+            print(f"     • Total Resumes Evaluated : {total_resumes}")
+            print(f"     • Qualifying / Scored     : {totals.get('scored', 0)}")
+            print(f"     • Disqualified / Rejected : {totals.get('rejected', 0)}")
+            print(f"     • Invalid / Unreadable    : {totals.get('invalid', 0)}")
+
+            avg_val = scores.get("average")
+            high_val = scores.get("highest")
+            low_val = scores.get("lowest")
+            med_val = scores.get("median")
+            avg_s = f"{float(avg_val):.1f}%" if avg_val is not None else "N/A"
+            high_s = f"{float(high_val):.1f}%" if high_val is not None else "N/A"
+            low_s = f"{float(low_val):.1f}%" if low_val is not None else "N/A"
+            med_s = f"{float(med_val):.1f}%" if med_val is not None else "N/A"
+
+            print("\n  3. SCORE METRICS (SCORED POOL):")
+            print(f"     • Average: {avg_s}  |  Median: {med_s}  |  Highest: {high_s}  |  Lowest: {low_s}")
+
+            print("\n  4. TOP SHORTLISTED CANDIDATES:")
+            if top_candidates:
+                for idx, c in enumerate(top_candidates, 1):
+                    rank = c.get("rank", idx)
+                    name = c.get("name") or c.get("file") or f"Candidate #{rank}"
+                    c_score = c.get("score")
+                    sc_s = f"{float(c_score):.1f}%" if c_score is not None else "N/A"
+                    met_rules = ", ".join(c.get("rules_met", [])) or "None"
+                    print(f"     [Rank #{rank}] {name} (Score: {sc_s})")
+                    print(f"          Rules Met: {met_rules}")
+            else:
+                print("     • No qualifying candidates recorded.")
+
+            print("\n  5. PER-RULE MATCH BREAKDOWN:")
+            if rules:
+                for idx, r in enumerate(rules, 1):
+                    prio = str(r.get("priority", "rule")).upper()
+                    text = r.get("rule") or r.get("text", "")
+                    met = r.get("met") if "met" in r else r.get("met_count", 0)
+                    if "missed" in r:
+                        checked = met + r.get("missed", 0)
+                    else:
+                        checked = r.get("checked_count", 0)
+                    rate = r.get("percent_met") if "percent_met" in r else r.get("met_rate", 0.0)
+                    chk_str = f"/{checked}" if checked else ""
+                    print(f"     {idx}. [{prio}] {text}")
+                    print(f"        Matched: {met}{chk_str} ({float(rate):.1f}%)")
+            else:
+                print("     • No rule statistics recorded.")
+
+            if invalid_docs:
+                print("\n  6. INVALID / UNREADABLE RESUMES:")
+                for inv in invalid_docs:
+                    print(f"     • {inv.get('file', 'Unknown')}: {inv.get('reason', 'N/A')}")
+
+            print("\n" + "=" * 75 + "\n")
+
+        except json.JSONDecodeError as err:
+            print(f"\n  [!] ERROR: Corrupted JSON in '{summary_file}': {err}\n")
+        except Exception as err:
+            print(f"\n  [!] ERROR: Could not read summary report: {err}\n")

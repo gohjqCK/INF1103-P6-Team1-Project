@@ -1,8 +1,10 @@
 """Orchestrates pipeline processing, file exports, and business rules."""
+import io
 import json
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from pypdf import PdfReader
 
 from data_manager_modules.data_manager_resume import Resume
 from data_manager_modules.data_manager_supabase_handler import SupabaseHandler
@@ -16,26 +18,92 @@ class DataManager:
         self.db_handler = SupabaseHandler()
         self.parser = ResumePDFParser()
 
-    def process_all_resumes(self, output_file: str = "resumes.json") -> List[Dict[str, Any]]:
-        db_files = self.db_handler.fetch_resume_files()
+    def parse_pdf_bytes(self, file_name: str, pdf_bytes: bytes) -> Resume:
+        """Extracts text from in-memory PDF bytes and returns a validated Resume object."""
+        text = ""
+        pages = 0
+        try:
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            pages = len(reader.pages)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+            return Resume(file_name=file_name, raw_text=text, pages=pages)
+        except Exception as err:
+            return Resume(file_name=file_name, error_message=f"Could not read the PDF file: {err}")
+
+    def upload_resume_bytes(
+        self, file_name: str, pdf_bytes: bytes, company_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Parses PDF bytes, uploads the PDF to Supabase Storage, and registers it in resume_files & parsed_resumes."""
+        resume_obj = self.parse_pdf_bytes(file_name, pdf_bytes)
+        public_url = self.db_handler.upload_pdf_to_storage(file_name, pdf_bytes) or ""
+
+        self.db_handler.register_resume_file(
+            file_name=file_name,
+            pdf_url=public_url,
+            company_id=company_id,
+            parsed_text=resume_obj.raw_text,
+            pages=resume_obj.pages,
+            status=resume_obj.status,
+            invalid_reason=resume_obj.reason,
+        )
+
+        try:
+            self.db_handler.export_parsed_resumes([resume_obj])
+        except Exception:
+            pass
+
+        result = resume_obj.to_dict()
+        result["pdf_url"] = public_url
+        result["company_id"] = company_id
+        return result
+
+    def upload_local_folder(
+        self, folder_path: str, company_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Scans a local folder for PDFs and uploads each to Supabase for the given company_id."""
+        folder = Path(folder_path)
+        if not folder.exists() or not folder.is_dir():
+            return []
+
+        uploaded: List[Dict[str, Any]] = []
+        for pdf_file in sorted(folder.glob("*.pdf")):
+            try:
+                pdf_bytes = pdf_file.read_bytes()
+                res = self.upload_resume_bytes(pdf_file.name, pdf_bytes, company_id=company_id)
+                uploaded.append(res)
+            except Exception as err:
+                print(f"Error uploading {pdf_file.name}: {err}")
+        return uploaded
+
+    def process_all_resumes(
+        self, output_file: str = "resumes.json", company_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetches resume records from Supabase for this company, parses/validates them, saves resumes.json, and returns dicts."""
+        db_files = self.db_handler.fetch_resume_files(company_id=company_id)
+
         if not db_files:
-            print("No records found in 'resume_files' table.")
+            print(f"No records found in 'resume_files' table for company ID {company_id}.")
             return []
 
         processed_resumes: List[Resume] = []
         for record in db_files:
             filename = record["file_name"]
-            parsed_text = record.get("parsed_text", "")
-            pages = record.get("pages", 0)
-            invalid_reason = record.get("invalid_reason", "")
+            parsed_text = record.get("parsed_text") or ""
+            pages = record.get("pages") or 0
+            invalid_reason = record.get("invalid_reason") or ""
+            if invalid_reason == "OK":
+                invalid_reason = ""
 
-            # If text is already stored in DB, instantiate Resume directly without streaming from URL again
+            # If text or error is already stored in DB, instantiate Resume directly without streaming from URL again
             if parsed_text or invalid_reason:
                 resume_obj = Resume(
                     file_name=filename,
                     raw_text=parsed_text,
                     pages=pages,
-                    error_message=invalid_reason
+                    error_message=invalid_reason,
                 )
             else:
                 # Fallback: re-parse from URL if DB text is missing
@@ -43,6 +111,22 @@ class DataManager:
                 resume_obj = self.parser.parse_from_url(filename, pdf_url)
 
             processed_resumes.append(resume_obj)
+
+        valid_resumes = sorted(
+            [r for r in processed_resumes if r.status == "valid"], key=lambda x: x.file_name
+        )
+        invalid_resumes = sorted(
+            [r for r in processed_resumes if r.status == "invalid"], key=lambda x: x.file_name
+        )
+        ordered_resumes = valid_resumes + invalid_resumes
+
+        self.save_resumes_to_json(ordered_resumes, output_file)
+        try:
+            self.db_handler.export_parsed_resumes(ordered_resumes)
+        except Exception as err:
+            print(f"Warning: Could not export to parsed_resumes: {err}")
+
+        return [r.to_dict() for r in ordered_resumes]
 
     @staticmethod
     def save_resumes_to_json(resumes: List[Resume], output_file: str) -> List[Dict[str, Any]]:
