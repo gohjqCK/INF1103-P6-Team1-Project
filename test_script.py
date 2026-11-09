@@ -1,4 +1,4 @@
-import Logic_Manager
+import Logic_manager_modules.Logic_Manager as Logic_Manager
 import json
 from pathlib import Path
 Path("Test_Script").mkdir(exist_ok=True)

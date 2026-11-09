@@ -1,0 +1,85 @@
+[
+    {
+        "accepted": [
+            {
+                "file": "Adriana-Rosario-IT-Manager-Resume (TechieCV.com).pdf",
+                "status": null,
+                "reason": "Matched 1 out of 2 rules",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 50.0
+            },
+            {
+                "file": "Casey-Nakamura-System-Administrator-Resume (TechieCV.com).pdf",
+                "status": null,
+                "reason": "Matched 1 out of 2 rules",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 50.0
+            },
+            {
+                "file": "Jordan-Reyes-IT-Support-Specialist-Resume (TechieCV.com).pdf",
+                "status": null,
+                "reason": "Matched 1 out of 2 rules",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 50.0
+            },
+            {
+                "file": "Tech Professional Resume.pdf",
+                "status": null,
+                "reason": "Matched 1 out of 2 rules",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 50.0
+            },
+            {
+                "file": "UNC CS Technical Resume.pdf",
+                "status": null,
+                "reason": "Matched 2 out of 2 rules",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 100.0
+            }
+        ]
+    },
+    {
+        "rejected": [
+            {
+                "file": "Assistant IT Manager Resume.pdf",
+                "status": null,
+                "reason": "No rules matched",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 0.0
+            },
+            {
+                "file": "IT Infrastructure Administrator Resume (Invalid example).pdf",
+                "status": null,
+                "reason": "No rules matched",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 0.0
+            },
+            {
+                "file": "Senior IT Project Manager Resume (Invalid example).pdf",
+                "status": null,
+                "reason": "No rules matched",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 0.0
+            }
+        ]
+    },
+    {
+        "invalid": []
+    }
+]

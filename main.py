@@ -1,7 +1,7 @@
 """
 main.py - INF1103 Phase 2 Central Coordinator
 Runs CLI in the main thread and Telegram Bot in a background thread concurrently.
-Supports existing procedural managers with automatic fallback and future OOP classes.
+Integrates OOP Logic Manager modules, Data Manager, AI Manager, and dual I/O managers.
 """
 
 import json
@@ -22,7 +22,7 @@ except ImportError:
 from io_manager_modules.io_manager_cli import CLIIOManager
 from io_manager_modules.io_manager_telegram import TelegramIOManager
 
-# Safe imports for team managers (allows app to start even if dependencies are missing)
+# Safe imports for team managers
 try:
     import AI_Manager
     _AI_MANAGER_AVAILABLE = True
@@ -39,13 +39,16 @@ except Exception as err:
     _DATA_MANAGER_AVAILABLE = False
     print(f"  [Notice] Data_Manager could not be loaded ({err}).")
 
+# Import new OOP Logic Manager Modules
 try:
-    import Logic_Manager
-    _LOGIC_MANAGER_AVAILABLE = True
+    import Logic_manager_modules.Logic_Manager as Logic_Manager
+    from Logic_manager_modules.ResultsPath import ResultsPath
+    from Logic_manager_modules.ResultsData import ResultsData
+    _LOGIC_MODULES_AVAILABLE = True
 except Exception as err:
     Logic_Manager = None
-    _LOGIC_MANAGER_AVAILABLE = False
-    print(f"  [Notice] Logic_Manager could not be loaded ({err}).")
+    _LOGIC_MODULES_AVAILABLE = False
+    print(f"  [Notice] Logic_manager_modules could not be loaded ({err}).")
 
 AI_OUTPUT_FILE = "ai_output.json"
 
@@ -57,7 +60,7 @@ AI_OUTPUT_FILE = "ai_output.json"
 def execute_screening_pipeline(employer_inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Executes the 4-stage screening pipeline.
-    Bridges current procedural managers and automatically adapts to future OOP classes.
+    Bridges Data_Manager, AI_Manager, and Jerald's new Logic_manager_modules.
     """
     rules = employer_inputs.get("business_rules", [])
     pdf_directory = employer_inputs.get("pdf_directory", "resumes")
@@ -89,25 +92,18 @@ def execute_screening_pipeline(employer_inputs: Dict[str, Any]) -> List[Dict[str
     resumes_json_path = "resumes.json"
     parsed_resumes: List[Dict[str, Any]] = []
 
-    # Try future OOP DataManager, fallback to procedural parse_resumes
-    try:
-        from data_manager_modules.data_manager import DataManager
-        dm = DataManager()
-        parsed_resumes = dm.parse_resumes(pdf_directory)
-    except (ImportError, AttributeError):
-        if _DATA_MANAGER_AVAILABLE and hasattr(Data_Manager, "parse_resumes"):
-            parsed_resumes = Data_Manager.parse_resumes(folder=pdf_directory, output_file=resumes_json_path)
-        else:
-            print("  [!] Data_Manager not available to parse resumes.")
+    if _DATA_MANAGER_AVAILABLE and hasattr(Data_Manager, "parse_resumes"):
+        parsed_resumes = Data_Manager.parse_resumes(folder=pdf_directory, output_file=resumes_json_path)
+    else:
+        print("  [!] Data_Manager not available to parse resumes.")
 
     if not parsed_resumes:
         print(f"  [!] No valid resumes found in '{pdf_directory}'.")
         return []
 
     # -------------------------------------------------------------------------
-    # Stage 3: Screen Resumes (AI Manager or Offline Fallback)
+    # Stage 3 & 4: Screen, Filter, and Sort (AI Manager & Logic Manager)
     # -------------------------------------------------------------------------
-    print(f"  [Stage 3/4] Screening {len(parsed_resumes)} resume(s)...")
     ollama_online = False
     if _AI_MANAGER_AVAILABLE and hasattr(AI_Manager, "check_connection"):
         try:
@@ -115,64 +111,67 @@ def execute_screening_pipeline(employer_inputs: Dict[str, Any]) -> List[Dict[str
         except Exception:
             ollama_online = False
 
-    screened_results: List[Dict[str, Any]] = []
-
-    if ollama_online:
-        print("  -> Running live Ollama AI screening model...")
-        try:
-            # Future OOP AIScreener check
-            from ai_manager_modules.ai_screener import AIScreener
-            screener = AIScreener()
-            screened_results = screener.screen(rules, parsed_resumes)
-        except (ImportError, AttributeError):
-            AI_Manager.screen_resumes(
-                rules,
-                parsed_resumes,
-                resumes_file=resumes_json_path,
-                results_file=AI_OUTPUT_FILE,
-            )
-            if Path(AI_OUTPUT_FILE).exists():
-                with open(AI_OUTPUT_FILE, "r", encoding="utf-8") as f:
-                    screened_results = json.load(f)
-    else:
-        print("  -> Running offline screening (Logic Manager)...")
-        if _LOGIC_MANAGER_AVAILABLE and hasattr(Logic_Manager, "offline_screening_func"):
-            try:
-                screened_results = Logic_Manager.offline_screening_func(parsed_resumes, rules)
-            except Exception as err:
-                print(f"  [!] Offline screening error: {err}")
-                screened_results = parsed_resumes
-        else:
-            screened_results = parsed_resumes
-
-    # -------------------------------------------------------------------------
-    # Stage 4: Validate, Filter & Sort Results (Logic Manager)
-    # -------------------------------------------------------------------------
-    print("  [Stage 4/4] Validating and sorting screening results...")
     sorted_candidates: List[Dict[str, Any]] = []
 
-    try:
-        # Future OOP LogicManager check
-        from logic_manager_modules.logic_manager import LogicManager
-        lm = LogicManager()
-        sorted_candidates = lm.filter_and_sort(screened_results)
-    except (ImportError, AttributeError):
-        # Procedural fallback
-        if _LOGIC_MANAGER_AVAILABLE and hasattr(Logic_Manager, "filter_resume_func"):
-            try:
-                accepted, rejected, invalid = Logic_Manager.filter_resume_func(screened_results)
-                if _DATA_MANAGER_AVAILABLE and hasattr(Data_Manager, "outputfile_func"):
-                    Data_Manager.outputfile_func(accepted, rejected, invalid, str(out_dir))
-                sorted_candidates = Logic_Manager.sort_resume_func(accepted)
-            except Exception as err:
-                print(f"  [!] Logic_Manager sorting fallback: {err}")
-                sorted_candidates = sorted(
-                    screened_results, key=lambda c: c.get("score", 0), reverse=True
-                )
+    # Case A: Live Ollama AI Screening
+    if ollama_online:
+        print("  [Stage 3/4] Running live Ollama AI screening model...")
+        AI_Manager.screen_resumes(
+            rules,
+            parsed_resumes,
+            resumes_file=resumes_json_path,
+            results_file=AI_OUTPUT_FILE,
+        )
+
+        print("  [Stage 4/4] Validating and sorting results via Logic_manager_modules...")
+        results_path = Path(AI_OUTPUT_FILE)
+        
+        if _LOGIC_MODULES_AVAILABLE:
+            results_path_obj = ResultsPath(results_path)
+            if (
+                results_path_obj.validate_file_exists_func == 0
+                and results_path_obj.validate_file_type_func == 0
+                and results_path_obj.validate_file_empty_func == 0
+            ):
+                with open(results_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                results_data = ResultsData(data)
+                if results_data.validate_resume_func == 0 and results_data.validate_resume_keys_func == "":
+                    accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_online_func(data)
+                    if _DATA_MANAGER_AVAILABLE and hasattr(Data_Manager, "outputfile_func"):
+                        Data_Manager.outputfile_func(
+                            accepted_resume.show_profiles,
+                            rejected_resume.show_profiles,
+                            invalid_resume.show_profiles,
+                            str(out_dir),
+                        )
+                    sorted_candidates = accepted_resume.sort_score
+                else:
+                    print("  [!] Logic Manager detected invalid data types or missing keys.")
+            else:
+                print("  [!] Logic Manager could not validate output JSON file.")
         else:
-            sorted_candidates = sorted(
-                screened_results, key=lambda c: c.get("score", 0), reverse=True
-            )
+            with open(results_path, "r", encoding="utf-8") as f:
+                sorted_candidates = json.load(f)
+
+    # Case B: Offline Heuristic Screening
+    else:
+        print("  [Stage 3/4] Ollama offline. Running Logic Manager offline screening...")
+        if _LOGIC_MODULES_AVAILABLE and hasattr(Logic_Manager, "offline_screening_func"):
+            offline_resumes = Logic_Manager.offline_screening_func(parsed_resumes, rules)
+            print("  [Stage 4/4] Filtering and ranking offline screening results...")
+            accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_offline_func(offline_resumes)
+            if _DATA_MANAGER_AVAILABLE and hasattr(Data_Manager, "outputfile_func"):
+                Data_Manager.outputfile_func(
+                    accepted_resume.show_profiles,
+                    rejected_resume.show_profiles,
+                    invalid_resume.show_profiles,
+                    str(out_dir),
+                )
+            sorted_candidates = accepted_resume.sort_score
+        else:
+            sorted_candidates = sorted(parsed_resumes, key=lambda c: c.get("score", 0), reverse=True)
 
     print(f"[Pipeline Complete] Returned {len(sorted_candidates)} ranked candidate(s).\n")
     return sorted_candidates

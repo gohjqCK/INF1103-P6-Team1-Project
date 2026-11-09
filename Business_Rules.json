@@ -1,10 +1,10 @@
 [
-    {
-        "text": "cloud",
-        "priority": "must"
-    },
-    {
-        "text": "python",
-        "priority": "important"
-    }
+  {
+    "text": "cloud",
+    "priority": "must"
+  },
+  {
+    "text": "Python",
+    "priority": "important"
+  }
 ]
