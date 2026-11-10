@@ -1,0 +1,31 @@
+[
+    {
+        "accepted": [
+            {
+                "file": "Adriana-Rosario-IT-Manager-Resume (TechieCV.com).pdf",
+                "status": null,
+                "reason": "Matched 1 out of 2 rules",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 50.0
+            }
+        ]
+    },
+    {
+        "rejected": [
+            {
+                "file": "Assistant IT Manager Resume.pdf",
+                "status": null,
+                "reason": "No rules matched",
+                "pages": null,
+                "text": null,
+                "outcome": "scored",
+                "score": 0.0
+            }
+        ]
+    },
+    {
+        "invalid": null
+    }
+]

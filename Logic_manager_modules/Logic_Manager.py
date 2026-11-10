@@ -93,11 +93,12 @@ def create_classes(combinedList):
     rejectedList=RejectedList()
     invalidList=InvalidList()
     #assign list
+    
     acceptedList.list=combinedList["acceptedList"]
     rejectedList.list=combinedList["rejectedList"]
     invalidList.list=combinedList["invalidList"]
 
-    return [acceptedList,rejectedList,invalidList]
+    return acceptedList,rejectedList,invalidList
 
 
 #Remove invalid resumes and resumes that scored 0.0

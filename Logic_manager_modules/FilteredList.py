@@ -1,20 +1,28 @@
+from Logic_manager_modules.Profile import Profile
 from abc import ABC, abstractmethod
 
 class FilteredList(ABC):
     def __init__(self):
         self.__resume_list=[]
 
+    @property
+    def show_profiles(self):
+        profile_list=[]
+        for profile in self.__resume_list:
+            profile_contents=profile.get_profile
+            profile_list.append(profile_contents)
+            return profile_list
+
     #prints list
     @property
-    @abstractmethod
     def list(self):
         return self.__resume_list
     
     #adds to list usage (listname.list=resume)
     @list.setter
-    @abstractmethod
-    def list(self,resume):
-        self.__resume_list.append(resume)
+    def list(self,resume_input):
+        for resume in resume_input:
+            self.__resume_list.append(resume)
 
     @abstractmethod
     def output_dict(self):
