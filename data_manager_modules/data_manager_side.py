@@ -93,17 +93,16 @@ class DataManager:
             filename = record["file_name"]
             parsed_text = record.get("parsed_text") or ""
             pages = record.get("pages") or 0
-            invalid_reason = record.get("invalid_reason") or ""
-            if invalid_reason == "OK":
-                invalid_reason = ""
+            status = record.get("status") or "valid"
+            error_message = record.get("invalid_reason", "") if status == "invalid" else ""
 
             # If text or error is already stored in DB, instantiate Resume directly without streaming from URL again
-            if parsed_text or invalid_reason:
+            if parsed_text or error_message:
                 resume_obj = Resume(
                     file_name=filename,
                     raw_text=parsed_text,
                     pages=pages,
-                    error_message=invalid_reason,
+                    error_message=error_message,
                 )
             else:
                 # Fallback: re-parse from URL if DB text is missing

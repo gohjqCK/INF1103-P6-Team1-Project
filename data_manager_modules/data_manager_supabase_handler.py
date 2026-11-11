@@ -63,13 +63,16 @@ class SupabaseHandler:
         self.client.table("resume_files").upsert(record, on_conflict="file_name").execute()
 
     def fetch_resume_files(self, company_id: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Retrieves file metadata records from the resume_files table, optionally filtered by company_id."""
+        """Retrieves file metadata records from the resume_files table, strictly scoped by company_id."""
         print("Fetching file list from Supabase 'resume_files' table...")
         query = self.client.table("resume_files").select(
             "id, company_id, file_name, pdf_url, parsed_text, pages, status, invalid_reason"
         )
         if company_id is not None:
             query = query.eq("company_id", company_id)
+        else:
+            # Multi-tenant isolation: Never leak other companies' resumes when company_id is omitted
+            query = query.is_("company_id", "null")
         response = query.execute()
         return response.data or []
 
