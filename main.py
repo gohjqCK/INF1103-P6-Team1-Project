@@ -103,6 +103,12 @@ def main():
             cli_io.display_success("Resumes successfully screened!")
             cli_io.display_screening_results(ranked_candidates, top_n=config.get("top_n", 3))
 
+            try:
+                report_path = pipeline.generate_overview_report(ranked_candidates)
+                cli_io.display_message(f"📄 Overview report saved to: {report_path}")
+            except Exception as err:
+                cli_io.display_error(f"Error generating overview report: {err}")
+
         rerun = True
 
 
