@@ -18,11 +18,10 @@ class FilteredList(ABC):
     def list(self):
         return self.__resume_list
     
-    #adds to list usage (listname.list=resume)
+    #adds to list usage
     @list.setter
-    def list(self,resume_input):
-        for resume in resume_input:
-            self.__resume_list.append(resume)
+    def list(self,resume):
+        self.__resume_list.append(resume)
 
     @abstractmethod
     def output_dict(self):

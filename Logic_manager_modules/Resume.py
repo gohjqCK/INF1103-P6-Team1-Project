@@ -1,6 +1,6 @@
 from Logic_manager_modules.Profile import Profile
 class Resume:
-    def __init__(self,resume_dict):
+    def __init__(self,resume_dict:dict):
         self.__name=resume_dict["name"]
         self.__email=resume_dict["email"]
         self.__phone=resume_dict["phone"]

@@ -83,54 +83,22 @@ def validate_resume_keys_func(resume_list):
         resume_count+=1
     return result
 
-def combined_list_func():
-    return {"acceptedList":[],"rejectedList":[],"invalidList":[]}
-
-def create_classes(combinedList):
-
-    #creating classes
-    acceptedList=AcceptedList()
-    rejectedList=RejectedList()
-    invalidList=InvalidList()
-    #assign list
-    
-    acceptedList.list=combinedList["acceptedList"]
-    rejectedList.list=combinedList["rejectedList"]
-    invalidList.list=combinedList["invalidList"]
-
-    return acceptedList,rejectedList,invalidList
-
-
-#Remove invalid resumes and resumes that scored 0.0
-def filter_resume_online_func(resume_list):
-    #Copies the data
+#
+def filter_resume_func(resume_list,object_type):
     resume_list_copy=copy.deepcopy(resume_list)
-    #to allocate stringname
-    combinedList=combined_list_func()
-    for raw_resume in resume_list_copy:
-        #create a resume
-        resume= Resume(raw_resume)
-        #Decide which list to put the resume in
-        resumeEvaluate=ResumeEvaluator(resume)
-        #the return value + "List"
-        stringname=str(resumeEvaluate.category())+"List"
+    #Creates a ResumeEvaluator object
+    resumeEvaluate=ResumeEvaluator(resume_list_copy,object_type)
+
+    #creates accepted, rejected and invalid list and append all to Overall list
+    resumeEvaluate.create_classes()
+
+    #Create objects and allocate to the respective lists
+    resumeEvaluate.create_obj()
         
-        combinedList[stringname].append(resume)
-    #creating classes
-    return create_classes(combinedList)
+    return resumeEvaluate.overall_list.list_overall[0],resumeEvaluate.overall_list.list_overall[1],resumeEvaluate.overall_list.list_overall[2]
 
-def filter_resume_offline_func(resume_list):
-    #Copies the data
-    resume_list_copy=copy.deepcopy(resume_list)
-    combinedList=combined_list_func()
-    for raw_resume in resume_list_copy:
-        #Create a profile(offline resume)
-        profile=Profile(raw_resume)
-        #Decide which list to put the resume in
-        profileEvaluate=ResumeEvaluator(profile)
-        stringname=str(profileEvaluate.category())+"List"
-        combinedList[stringname].append(profile)
-    return create_classes(combinedList)
+
+
 
 '''def filter_resume_func(resume_list,mode):
     function_name=f"filter_resume_{mode}_func"

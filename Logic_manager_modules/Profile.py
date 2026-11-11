@@ -1,6 +1,6 @@
 #Contents that will be shown in terminal
 class Profile:
-    def __init__(self,profile_dict):
+    def __init__(self,profile_dict:dict):
         self.__file=profile_dict["file"]
         self.__outcome=profile_dict["outcome"]
         self.__reason=profile_dict["reason"]
