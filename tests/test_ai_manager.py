@@ -159,6 +159,17 @@ class TestAIManager(unittest.TestCase):
         AIManager(client).screen_resumes(RULES, resumes, on_result=lambda entry: seen.append(entry["file"]))
         self.assertEqual(sorted(seen), ["a.pdf", "b.pdf"])
 
+    def test_results_keep_the_resume_id(self):
+        client = FakeLLMClient(reply=self._resume_reply())
+        scored = make_resume("a.pdf", "Ada knows Python")
+        scored["id"] = 7
+        invalid = {"id": 8, "file": "scan.pdf", "status": "invalid", "reason": "No readable text", "text": ""}
+
+        results = AIManager(client).screen_resumes(RULES, [scored, invalid])
+
+        ids = {entry["file"]: entry["id"] for entry in results}
+        self.assertEqual(ids, {"a.pdf": 7, "scan.pdf": 8})
+
 
 if __name__ == "__main__":
     unittest.main()

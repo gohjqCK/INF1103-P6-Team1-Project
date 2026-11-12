@@ -107,6 +107,7 @@ class AIManager:
     def _empty_entry(resume: dict) -> dict:
         """Returns a result with every field other managers expect."""
         return {
+            "id": resume.get("id"),
             "file": resume.get("file", ""),
             "name": "",
             "email": "",

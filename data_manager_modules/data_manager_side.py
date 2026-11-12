@@ -86,7 +86,7 @@ class DataManager:
             print(f"No records found in 'resume_files' table for company ID {company_id}.")
             return []
 
-        processed_resumes: List[Resume] = []
+        resumes: List[Dict[str, Any]] = []
         for record in db_files:
             filename = record["file_name"]
             parsed_text = record.get("parsed_text") or ""
@@ -108,9 +108,11 @@ class DataManager:
                 pdf_url = record.get("pdf_url")
                 resume_obj = self.parser.parse_from_url(filename, pdf_url)
 
-            processed_resumes.append(resume_obj)
+            resume_dict = resume_obj.to_dict()
+            resume_dict["id"] = record.get("id")
+            resumes.append(resume_dict)
 
-        return [resume.to_dict() for resume in processed_resumes]
+        return resumes
 
     @staticmethod
     def save_resumes_to_json(resumes: List[Resume], output_file: str) -> List[Dict[str, Any]]:
