@@ -1,4 +1,4 @@
-"""Streams remote PDF files in memory and parses text using pypdf."""
+"""Streams remote PDF files or raw bytes in memory and parses text using pypdf."""
 import io
 import logging
 import urllib.request
@@ -13,18 +13,11 @@ class ResumePDFParser:
     """Streams and parses PDF documents into structural text."""
 
     @staticmethod
-    def parse_from_url(file_name: str, pdf_url: Optional[str]) -> Resume:
-        """Downloads a PDF stream into memory and extracts text."""
-        if not pdf_url:
-            return Resume(file_name=file_name, error_message="No valid pdf_url found in database entry.")
-
+    def parse_pdf_bytes(file_name: str, pdf_bytes: bytes) -> Resume:
+        """Extracts text from raw PDF bytes in memory and returns a validated Resume object."""
         text = ""
         pages = 0
         try:
-            req = urllib.request.Request(pdf_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as response_stream:
-                pdf_bytes = response_stream.read()
-
             reader = PdfReader(io.BytesIO(pdf_bytes))
             pages = len(reader.pages)
             for page in reader.pages:
@@ -32,5 +25,19 @@ class ResumePDFParser:
                 if extracted:
                     text += extracted + "\n"
             return Resume(file_name=file_name, raw_text=text, pages=pages)
+        except Exception as error:
+            return Resume(file_name=file_name, error_message=f"Could not read the PDF bytes: {error}")
+
+    @staticmethod
+    def parse_from_url(file_name: str, pdf_url: Optional[str]) -> Resume:
+        """Downloads a PDF stream into memory and extracts text."""
+        if not pdf_url:
+            return Resume(file_name=file_name, error_message="No valid pdf_url found in database entry.")
+
+        try:
+            req = urllib.request.Request(pdf_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req) as response_stream:
+                pdf_bytes = response_stream.read()
+            return ResumePDFParser.parse_pdf_bytes(file_name, pdf_bytes)
         except Exception as error:
             return Resume(file_name=file_name, error_message=f"Could not read the PDF stream: {error}")

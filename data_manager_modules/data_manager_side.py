@@ -1,10 +1,8 @@
 """Orchestrates pipeline processing, file exports, and business rules."""
-import io
 import json
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
-from pypdf import PdfReader
+from typing import List, Dict, Any, Optional, Tuple
 
 from data_manager_modules.data_manager_resume import Resume
 from data_manager_modules.data_manager_supabase_handler import SupabaseHandler
@@ -13,52 +11,11 @@ from data_manager_modules.data_manager_resume_parser import ResumePDFParser
 
 class DataManager:
     """Orchestrates ingestion, processing, exports, and business rules."""
+    CLOUD_READY = True
 
     def __init__(self):
         self.db_handler = SupabaseHandler()
         self.parser = ResumePDFParser()
-
-    def parse_pdf_bytes(self, file_name: str, pdf_bytes: bytes) -> Resume:
-        """Extracts text from in-memory PDF bytes and returns a validated Resume object."""
-        text = ""
-        pages = 0
-        try:
-            reader = PdfReader(io.BytesIO(pdf_bytes))
-            pages = len(reader.pages)
-            for page in reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text += extracted + "\n"
-            return Resume(file_name=file_name, raw_text=text, pages=pages)
-        except Exception as err:
-            return Resume(file_name=file_name, error_message=f"Could not read the PDF file: {err}")
-
-    def upload_resume_bytes(
-        self, file_name: str, pdf_bytes: bytes, company_id: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """Parses PDF bytes, uploads the PDF to Supabase Storage, and registers it in resume_files & parsed_resumes."""
-        resume_obj = self.parse_pdf_bytes(file_name, pdf_bytes)
-        public_url = self.db_handler.upload_pdf_to_storage(file_name, pdf_bytes) or ""
-
-        self.db_handler.register_resume_file(
-            file_name=file_name,
-            pdf_url=public_url,
-            company_id=company_id,
-            parsed_text=resume_obj.raw_text,
-            pages=resume_obj.pages,
-            status=resume_obj.status,
-            invalid_reason=resume_obj.reason,
-        )
-
-        try:
-            self.db_handler.export_parsed_resumes([resume_obj])
-        except Exception:
-            pass
-
-        result = resume_obj.to_dict()
-        result["pdf_url"] = public_url
-        result["company_id"] = company_id
-        return result
 
     def upload_local_folder(
         self, folder_path: str, company_id: Optional[int] = None
@@ -91,7 +48,7 @@ class DataManager:
         processed_resumes: List[Resume] = []
         for record in db_files:
             filename = record["file_name"]
-            parsed_text = record.get("parsed_text") or ""
+            parsed_text = record.get("parsed_text") or record.get("text", "")
             pages = record.get("pages") or 0
             status = record.get("status") or "valid"
             error_message = record.get("invalid_reason", "") if status == "invalid" else ""
@@ -105,7 +62,6 @@ class DataManager:
                     error_message=error_message,
                 )
             else:
-                # Fallback: re-parse from URL if DB text is missing
                 pdf_url = record.get("pdf_url")
                 resume_obj = self.parser.parse_from_url(filename, pdf_url)
 
@@ -120,11 +76,6 @@ class DataManager:
         ordered_resumes = valid_resumes + invalid_resumes
 
         self.save_resumes_to_json(ordered_resumes, output_file)
-        try:
-            self.db_handler.export_parsed_resumes(ordered_resumes)
-        except Exception as err:
-            print(f"Warning: Could not export to parsed_resumes: {err}")
-
         return [r.to_dict() for r in ordered_resumes]
 
     @staticmethod
@@ -156,11 +107,7 @@ class DataManager:
         with open(filepath, "w", encoding="utf-8") as file:
             json.dump(categorized_list, file, ensure_ascii=False, indent=4)
 
-    @staticmethod
-    def save_businessrules(businessrules: List[Any], filepath: str = "Business_Rules.json"):
-        """Saves business rule configurations to disk."""
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(businessrules, f, indent=4)
+# Handle business rules data
 
     @staticmethod
     def get_businessrules(filepath: str = "Business_Rules.json") -> List[Any]:
@@ -172,3 +119,101 @@ class DataManager:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump([], f, indent=4)
             return []
+
+    def list_company_rule_sets(self, company_id: int) -> List[Dict[str, Any]]:
+        """Lists all business rule sets for a given company ordered by ID ascending."""
+        return self.db_handler.list_company_rule_sets(company_id)
+
+    def create_company_rule_set(
+        self,
+        company_id: int,
+        set_name: str,
+        rules: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Creates a new named business rule set for a company."""
+        return self.db_handler.create_company_rule_set(company_id, set_name, rules)
+
+    def update_company_rule_set(
+        self,
+        company_id: int,
+        rule_set_id: int,
+        set_name: Optional[str] = None,
+        rules: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Updates an existing business rule set in place."""
+        return self.db_handler.update_company_rule_set(company_id, rule_set_id, set_name, rules)
+
+    def delete_company_rule_set(self, company_id: int, rule_set_id: int) -> bool:
+        """Deletes a business rule set and cleans up linked results."""
+        return self.db_handler.delete_company_rule_set(company_id, rule_set_id)
+
+# Handle companies data
+
+    def create_company(
+        self, company_name: str, passcode_hash: str, owner_id: int, invite_code: str
+    ) -> Dict[str, Any]:
+        return self.db_handler.create_company(company_name, passcode_hash, owner_id, invite_code)
+
+    def get_company_by_invite(self, invite_code: str) -> Optional[Dict[str, Any]]:
+        return self.db_handler.get_company_by_invite(invite_code)
+
+    def add_company_member(self, company_id: int, user_id: int) -> None:
+        self.db_handler.add_company_member(company_id, user_id)
+
+# Handle resume files
+
+    def parse_pdf_bytes(self, file_name: str, pdf_bytes: bytes) -> Resume:
+        """Parses raw PDF bytes in memory using ResumePDFParser."""
+        return self.parser.parse_pdf_bytes(file_name, pdf_bytes)
+
+    def upload_resume_bytes(
+        self, file_name: str, pdf_bytes: bytes, company_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Parses, uploads to Supabase Storage 'resume_files', and registers metadata."""
+        return self.db_handler.upload_resume_bytes(file_name, pdf_bytes, company_id)
+
+    def list_company_resumes(self, company_id: int) -> List[Dict[str, Any]]:
+        """Lists all uploaded resumes for a specific company_id."""
+        return self.db_handler.list_company_resumes(company_id)
+
+    def download_resume_bytes(self, company_id: int, file_name: str) -> Optional[bytes]:
+        """Downloads raw PDF bytes from Storage for a company's resume."""
+        return self.db_handler.download_resume_bytes(company_id, file_name)
+
+    def delete_company_resume(self, company_id: int, file_name: str) -> bool:
+        """Deletes a single resume from Storage and the resume_files table."""
+        return self.db_handler.delete_company_resume(company_id, file_name)
+
+    def clear_company_resumes(self, company_id: int) -> None:
+        """Deletes all resumes belonging to company_id from Storage and resume_files."""
+        self.db_handler.clear_company_resumes(company_id)
+
+# Handle results & AI Summary persistence
+
+    def save_screening_results(
+        self,
+        company_id: int,
+        ranked_candidates: List[Dict[str, Any]],
+        summary_data: Optional[Dict[str, Any]],
+        filtered_resumes: Optional[Dict[str, Any]] = None,
+        business_rules_id: Optional[int] = None,
+    ) -> None:
+        """Persists screening results and optional AI summary to Supabase."""
+        self.db_handler.save_screening_results(
+            company_id=company_id,
+            ranked_candidates=ranked_candidates,
+            summary_data=summary_data,
+            filtered_resumes=filtered_resumes,
+            business_rules_id=business_rules_id,
+        )
+
+    def get_screening_results(
+        self,
+        company_id: int,
+        business_rules_id: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """Fetches the latest screening results and linked AI summary."""
+        return self.db_handler.get_screening_results(
+            company_id=company_id,
+            business_rules_id=business_rules_id,
+        )
