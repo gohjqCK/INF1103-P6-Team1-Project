@@ -49,8 +49,9 @@ class CLIIOManager(BaseIOManager):
         else:
             self._data_manager = None
 
-        self._data_file = Path(data_file)
-        self._companies: Dict[str, Dict[str, Any]] = self._load_companies()
+        self._use_cloud = bool(getattr(self._data_manager, "CLOUD_READY", False))
+        self._next_stub_company_id = 101
+        self._companies: Dict[str, Dict[str, Any]] = {}
         self._active_company_name: Optional[str] = None
         self._active_company_id: Optional[int] = None
 
@@ -115,48 +116,28 @@ class CLIIOManager(BaseIOManager):
     # -------------------------------------------------------------------------
 
     def _load_companies(self) -> Dict[str, Dict[str, Any]]:
-        companies: Dict[str, Dict[str, Any]] = {}
-        if self._data_file.exists():
-            try:
-                companies = json.loads(self._data_file.read_text(encoding="utf-8"))
-            except Exception:
-                companies = {}
-
-        changed = False
-        used_ids = {
-            int(info["company_id"])
-            for info in companies.values()
-            if isinstance(info, dict) and isinstance(info.get("company_id"), int)
-        }
-        next_id = 101
-        for name, info in companies.items():
-            if isinstance(info, dict) and not isinstance(info.get("company_id"), int):
-                while next_id in used_ids:
-                    next_id += 1
-                info["company_id"] = next_id
-                used_ids.add(next_id)
-                changed = True
-
-        if changed:
-            self._data_file.write_text(json.dumps(companies, indent=2), encoding="utf-8")
-        return companies
+        """Loads companies from in-memory stub (no local companies.json file writes)."""
+        return self._companies
 
     def _save_companies(self) -> None:
-        self._data_file.write_text(json.dumps(self._companies, indent=2), encoding="utf-8")
+        """No-op stub; companies are stored in memory or synced via DataManager cloud methods."""
+        pass
 
     def _next_company_id(self) -> int:
-        self._companies = self._load_companies()
         existing = [
             int(info["company_id"])
             for info in self._companies.values()
             if isinstance(info, dict) and isinstance(info.get("company_id"), int)
         ]
-        return (max(existing) + 1) if existing else 101
+        if existing:
+            return max(existing) + 1
+        cid = self._next_stub_company_id
+        self._next_stub_company_id += 1
+        return cid
 
     def authenticate_company(self) -> Tuple[str, int]:
         """Prompts employer to select, create, or join a company folder."""
         while True:
-            self._companies = self._load_companies()
             print("\n=============================================")
             print("        COMPANY FOLDER AUTHENTICATION        ")
             print("=============================================")
@@ -217,15 +198,30 @@ class CLIIOManager(BaseIOManager):
 
                 prefix = "".join(c for c in name.upper() if c.isalnum())[:4] or "COMP"
                 invite_code = f"{prefix}-{secrets.randbelow(9000) + 1000}"
-                cid = self._next_company_id()
+                passcode_hash = hashlib.sha256(passcode.encode("utf-8")).hexdigest()
 
-                self._companies[name] = {
-                    "company_id": cid,
-                    "invite_code": invite_code,
-                    "passcode_hash": hashlib.sha256(passcode.encode("utf-8")).hexdigest(),
-                    "members": ["cli_admin"],
-                }
-                self._save_companies()
+                if (
+                    self._use_cloud
+                    and self._data_manager is not None
+                    and hasattr(self._data_manager, "create_company")
+                ):
+                    record = self._data_manager.create_company(
+                        company_name=name,
+                        passcode_hash=passcode_hash,
+                        owner_id=0,
+                        invite_code=invite_code,
+                    )
+                    cid = record["company_id"]
+                    self._companies[name] = record
+                else:
+                    cid = self._next_company_id()
+                    self._companies[name] = {
+                        "company_id": cid,
+                        "company_name": name,
+                        "invite_code": invite_code,
+                        "passcode_hash": passcode_hash,
+                        "members": ["cli_admin"],
+                    }
 
                 self._active_company_name = name
                 self._active_company_id = cid
@@ -245,7 +241,17 @@ class CLIIOManager(BaseIOManager):
 
             elif choice == "3":
                 code = self._validator.safe_input("Enter Team Invite Code: ").strip().upper()
-                target_name = next(
+                target_record = None
+                if (
+                    self._use_cloud
+                    and self._data_manager is not None
+                    and hasattr(self._data_manager, "get_company_by_invite")
+                ):
+                    target_record = self._data_manager.get_company_by_invite(code)
+                    if target_record:
+                        self._companies[target_record["company_name"]] = target_record
+
+                target_name = target_record["company_name"] if target_record else next(
                     (n for n, i in self._companies.items() if i.get("invite_code", "").upper() == code),
                     None,
                 )
