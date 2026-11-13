@@ -7,7 +7,7 @@ from ai_manager_modules.ai_manager_llm_client import LLMClient
 from ai_manager_modules.ai_manager_llm_error import LLMError
 from ai_manager_modules.ai_manager_resume_scorer import ResumeScorer
 from ai_manager_modules.ai_manager_screening_task import ScreeningTask
-from ai_manager_modules.ai_manager_summary_builder import SummaryBuilder
+from Logic_manager_modules.SummaryBuilder import SummaryBuilder
 from ai_manager_modules.ai_manager_summary_task import SummaryTask
 
 

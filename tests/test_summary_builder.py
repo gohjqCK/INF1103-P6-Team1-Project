@@ -1,6 +1,6 @@
 import unittest
 
-from ai_manager_modules.ai_manager_summary_builder import SummaryBuilder
+from Logic_manager_modules.SummaryBuilder import SummaryBuilder
 
 RULES = [
     {"text": "Python", "priority": "must"},
