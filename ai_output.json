@@ -17,20 +17,29 @@
       "SOC 2 Type II",
       "budget ownership",
       "service-management discipline",
-      "ServiceNow (ITSM, Change, Problem, CMDB)"
+      "business-partnership instincts",
+      "change management",
+      "problem management",
+      "service request management",
+      "collaboration",
+      "identity",
+      "service management tools",
+      "security and compliance",
+      "budget and vendor management",
+      "project, BC & DR"
     ],
     "qualifications": [
-      "B.B.A. in Management Information Systems from University of Wisconsin-Madison"
+      "B.B.A. in Management Information Systems from University of Wisconsin-Madison",
+      "IT Manager at Northwestern Mutual (Jul 2020 - Present)",
+      "IT Manager at Aurora Health Care (Jul 2015 - Jun 2020)"
     ],
     "work_experience": [
-      "Northwestern Mutual - IT Manager (Jul 2020 - Present)",
-      "Aurora Health Care - IT Manager (Jul 2015 - Jun 2020)"
+      "Lead IT operations for a Fortune-100 financial-services regional hub at Northwestern Mutual",
+      "Owned business continuity and disaster recovery for the regional medical group at Aurora Health Care"
     ],
     "projects": [
-      "Authored a 3-year IT roadmap for M365 modernization, Entra ID migration, and ServiceNow rollout",
-      "Managed an annual IT budget of $5.4M across capex and opex",
-      "Partnered with the CISO on access controls, patch cadence, endpoint security, and audit readiness",
-      "Sponsored 7 cross-functional IT projects including a regional office buildout, an ERP module rollout, and an M&A IT integration"
+      "Authored a 3-year IT roadmap at Northwestern Mutual",
+      "Hired 11 IT staff and mentored 4 promotions at Aurora Health Care"
     ]
   },
   {
@@ -67,18 +76,13 @@
     "phone": "800.991.5187",
     "outcome": "scored",
     "score": 0.0,
-    "reason": "Meets 0/2 rules. Missing: cloud; Python",
+    "reason": "Meets 0/2 rules. Missing: cloud; Python (Ignored 1 unverified claims).",
     "summary": "Versatile and hands-on Project Manager with a track record of success in managing complex IT modernization and system integration projects.",
     "skills": [
       "Project Management",
       "Strategic Planning",
       "Business Process Design",
       "IT Infrastructure & Standardization",
-      "Strategic Planning & Tactical Execution",
-      "Business Transformation Solutions",
-      "Business Continuity & Systems Security",
-      "Large-Scale Project Management",
-      "Budget Management & Cost Containment",
       "Risk Management & Risk Mitigation",
       "Leadership & Performance Enhancement",
       "Analytical Problem Solving Abilities",
@@ -91,20 +95,19 @@
       "PMP Training (Project Management Professional), Tech-Pro Consulting Ltd, Japan"
     ],
     "work_experience": [
-      "Brinkley Insurance Company Ltd.; Japan (2008—2012) - VP of Information Technology —Asia Pacific",
-      "Pacific Regional Ltd.; Japan (2007—2008) - IT/BUSINESS INTEGRATION MANAGER —Asia Pacific",
-      "BNX South Pacific Assurance Co. Ltd., Japan (2006) - REGIONAL MANAGER, IT Service Delivery —Asia Pacific",
-      "Canon Tech Solutions Ltd.; Japan (2001—2005) - PROJECT MANAGER —Asia Pacific",
-      "META Ltd.; Japan (2000—2001) - ROLLOUT PROJECT MANAGER/CONSULTANT",
-      "Resource Asia Pacific Ltd.; Japan, China (1990—2000) - REGIONAL PROJECT MANAGER/REGIONAL IS/IT MANAGER —Asia Pacific"
+      "VP of Information Technology —Asia Pacific, Brinkley Insurance Company Ltd., Japan (2008—2012)",
+      "IT/BUSINESS INTEGRATION MANAGER —Asia Pacific, Pacific Regional Ltd., Japan (2007—2008)",
+      "REGIONAL MANAGER, IT Service Delivery —Asia Pacific, BNX South Pacific Assurance Co. Ltd., Japan (2006)",
+      "PROJECT MANAGER —Asia Pacific, Canon Tech Solutions Ltd., Japan (2001—2005)",
+      "ROLLOUT PROJECT MANAGER/CONSULTANT, META Ltd., Japan (2000—2001)",
+      "REGIONAL PROJECT MANAGER/REGIONAL IS/IT MANAGER —Asia Pacific, Resource Asia Pacific Ltd., Japan, China (1990—2000)"
     ],
     "projects": [
       "Led and implemented complex projects and Global teams —mitigated risks, managed requirements, and worked with project stakeholders while managing expectations at the department and project levels.",
       "Directed the relocation of a regional data center and company regional office from Japan to Thailand; devised startup planning and managed operations within given resources, time, and budget.",
       "Managed global teams including up to 10 direct and indirect reports; developed staffing plans, managed workloads, defined deliverables, hired resources, conducted performance reviews, and ensured compliance with established company policies.",
-      "Captured 60% in cost savings through a virtualization project that substantially reduced the carbon footprint from over 15 servers to less than 5 servers supporting the entire Asia Pacific region.",
-      "Spearheaded the One Notes Server consolidation and migration project—reduced server usage from 9 One Notes servers to only 1 server; improved performance and reduced maintenance efforts of engineering staff.",
-      "Championed a new, virtual support team for level II support—provided Regional support and substantial cost-savings."
+      "Managed a cross-functional team of 10 members. Designed and developed IT strategy to support a Regional user base of more than 1,500 users throughout Japan, Beijing, Shanghai, Hong Kong, Australia, and India.",
+      "Led a team of 45 Level I and Level II help desk support team members providing outstanding quality IT services to 10 countries throughout Asia Pacific and serving a user base of more than 2,000."
     ]
   },
   {
@@ -133,13 +136,12 @@
       "B.S. in Information Technology from Arizona State University"
     ],
     "work_experience": [
-      "Senior IT Support Specialist at Carvana (Sep 2022 - Present)",
-      "IT Support Specialist at GoDaddy (Aug 2019 - Aug 2022)"
+      "Senior IT Support Specialist at Carvana, managing end-user support for 3,200+ employees, leading ticket triage, endpoint deployment, and identity and access support.",
+      "IT Support Specialist at GoDaddy, handling 65 to 90 tickets per week, deploying software and patches, and managing end-user security workflows."
     ],
     "projects": [
-      "Built the team's service-desk knowledge base in ServiceNow",
-      "Authoring and maintaining 220+ KB articles plus onboarding playbooks for new hires",
-      "Coordinated onboarding and offboarding for 380+ new hires and 190 offboardings"
+      "Built the team's service-desk knowledge base in ServiceNow, authoring and maintaining 220+ KB articles.",
+      "Led hardware refresh and peripheral support for 1,150 laptops and monitors, achieving 99.4% inventory accuracy at quarterly audit."
     ]
   },
   {
@@ -150,7 +152,7 @@
     "outcome": "scored",
     "score": 0.0,
     "reason": "Meets 0/2 rules. Missing: cloud; Python",
-    "summary": "Organised and practical digital support candidate with experience helping teams manage simple technical tasks, digital files, and everyday system support.",
+    "summary": "Practical digital support candidate with experience in IT systems, digital communication, and workplace support, including file organization and basic documentation.",
     "skills": [
       "IT support",
       "Helpdesk assistance",
@@ -190,18 +192,25 @@
     "reason": "Meets all rules.",
     "summary": "Ada Lovelace is a recent Computer Science graduate with experience in software development and teaching. She has a strong background in Python and has worked on projects involving cloud computing and AI tools.",
     "skills": [
-      "Python (Pandas, Matplotlib, Plotly, pytest)"
+      "Python (Pandas, Matplotlib, Plotly, pytest)",
+      "Java",
+      "JavaScript",
+      "C",
+      "Swift",
+      "TypeScript"
     ],
     "qualifications": [
-      "B.S. in Computer Science, University of North Carolina at Chapel Hill"
+      "B.S. in Computer Science, University of North Carolina at Chapel Hill, GPA: 3.7/4.0",
+      "Dean’s List, Honors Carolina"
     ],
     "work_experience": [
-      "Software Development Engineer Intern, Amazon",
-      "Undergraduate Teaching Assistant - Grading Lead, UNC-Chapel Hill Department of Computer Science",
-      "Software Engineering Intern, Fidelity Investments"
+      "Software Development Engineer Intern, Amazon, Seattle, WA (June 2026 - Present)",
+      "Undergraduate Teaching Assistant - Grading Lead, UNC-Chapel Hill Department of Computer Science, Chapel Hill, NC (Aug. 2025 - May 2026)",
+      "Software Engineering Intern, Fidelity Investments, Durham, NC (May 2025 - Aug. 2025)"
     ],
     "projects": [
-      "MusicBoxd, HackNC, Oct. 2025"
+      "MusicBoxd, HackNC (Oct. 2025)",
+      "CATCH Project Manager, UNC CS for Social Good (Jan. 2025 - Present)"
     ]
   },
   {

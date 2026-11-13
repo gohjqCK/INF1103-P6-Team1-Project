@@ -1,7 +1,7 @@
 from Logic_manager_modules.FilteredList import FilteredList
 from Logic_manager_modules.Sort_score import Sort_score
-from Logic_manager_modules.Profile import Profile
-from Logic_manager_modules.Resume import Resume
+from Logic_manager_modules.OfflineResume import OfflineResume
+from Logic_manager_modules.OnlineResume import OnlineResume
 #Format is accepted: [profile1],[profile2]
 class AcceptedList(FilteredList,Sort_score):
   def __init__(self):

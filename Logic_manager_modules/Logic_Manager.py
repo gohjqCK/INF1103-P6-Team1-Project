@@ -3,8 +3,8 @@ import copy
 import json
 from pathlib import Path
 from json.decoder import JSONDecodeError
-from Logic_manager_modules.Resume import Resume
-from Logic_manager_modules.Profile import Profile
+from Logic_manager_modules.OnlineResume import OnlineResume
+from Logic_manager_modules.OfflineResume import OfflineResume
 from Logic_manager_modules.OverallList import OverallList
 from Logic_manager_modules.AcceptedList import AcceptedList
 from Logic_manager_modules.RejectedList import RejectedList
@@ -95,7 +95,7 @@ def filter_resume_func(resume_list,object_type):
     #Create objects and allocate to the respective lists
     resumeEvaluate.create_obj()
         
-    return resumeEvaluate.overall_list.list_overall[0],resumeEvaluate.overall_list.list_overall[1],resumeEvaluate.overall_list.list_overall[2]
+    return resumeEvaluate.get_overall_list.list_overall[0],resumeEvaluate.get_overall_list.list_overall[1],resumeEvaluate.get_overall_list.list_overall[2]
 
 
 

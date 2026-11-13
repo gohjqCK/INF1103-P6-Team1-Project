@@ -6,8 +6,8 @@ import Data_Manager
 import IO_manager
 import Logic_manager_modules.Logic_Manager as Logic_Manager
 
-from Logic_manager_modules.Resume import Resume
-from Logic_manager_modules.Profile import Profile
+from Logic_manager_modules.OnlineResume import OnlineResume
+from Logic_manager_modules.OfflineResume import OfflineResume
 from Logic_manager_modules.ResultsPath import ResultsPath
 from Logic_manager_modules.ResultsData import ResultsData
 
@@ -57,7 +57,7 @@ def main():
                                     
                 results_data= ResultsData(data)
                 if results_data.validate_resume_func == 0 and results_data.validate_resume_keys_func == "":      
-                    accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data,Resume)
+                    accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(data,OnlineResume)
                     Data_Manager.outputfile_func(accepted_resume.show_profiles, rejected_resume.show_profiles, invalid_resume.show_profiles, outDir)
                     #Class method to sort score
                     sorted_resume=accepted_resume.sort_score
@@ -79,7 +79,7 @@ def main():
             IO_manager.display_error("Cannot connect to Ollama or required models are missing.")
             IO_manager.display_message("\n[4/4] Running offline rudimentry screening (Less accurate)")
             offline_resumes = Logic_Manager.offline_screening_func(resumes, rules)
-            accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(offline_resumes,Profile)
+            accepted_resume, rejected_resume, invalid_resume = Logic_Manager.filter_resume_func(offline_resumes,OfflineResume)
             Data_Manager.outputfile_func(accepted_resume.show_profiles, rejected_resume.show_profiles, invalid_resume.show_profiles, outDir)
             sorted_resume=accepted_resume.sort_score
             #sorted_resume = Logic_Manager.sort_resume_func(offline_resumes)

@@ -1,4 +1,4 @@
-from Logic_manager_modules.Profile import Profile
+from Logic_manager_modules.OfflineResume import OfflineResume
 from abc import ABC, abstractmethod
 
 class FilteredList(ABC):
@@ -9,7 +9,7 @@ class FilteredList(ABC):
     def show_profiles(self):
         profile_list=[]
         for profile in self.__resume_list:
-            profile_contents=profile.get_profile
+            profile_contents=profile.get_resume
             profile_list.append(profile_contents)
             return profile_list
 
@@ -32,5 +32,5 @@ class FilteredList(ABC):
     def list_to_profile(self):
         profile_list=[]
         for resume in self.list:
-            profile_list.append(resume.get_profile)
+            profile_list.append(resume.get_resume)
         return profile_list

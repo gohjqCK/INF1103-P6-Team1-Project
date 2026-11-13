@@ -1,5 +1,5 @@
-from Logic_manager_modules.Resume import Resume
-from Logic_manager_modules.Profile import Profile
+from Logic_manager_modules.OnlineResume import OnlineResume
+from Logic_manager_modules.OfflineResume import OfflineResume
 from Logic_manager_modules.OverallList import OverallList
 from Logic_manager_modules.AcceptedList import AcceptedList
 from Logic_manager_modules.RejectedList import RejectedList
@@ -35,6 +35,9 @@ class ResumeEvaluator:
     else:
       self._overall_list.list_overall[0].list=resume
 
+  @property
+  def get_overall_list(self):
+    return self._overall_list
 
 
 
