@@ -6,7 +6,7 @@ class RejectedList(FilteredList):
         
     #Abstract method
     @property
-    def output_dict(self):
-        return {"rejected":self.list_to_profile}
+    def output_dict(self) -> dict:
+        return {"rejected":self.get_list_resume_dict}
 
 

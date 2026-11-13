@@ -5,5 +5,5 @@ class OfflineResume(Resume):
         super().__init__(resume_dict)
 
     @property
-    def get_resume(self):
+    def get_resume(self)-> dict:
         return {"file":self.get_file,"status":self.status,"reason":self.get_reason,"pages":self.pages,"text":self.text,"outcome":self.get_outcome,"score":self.get_score}

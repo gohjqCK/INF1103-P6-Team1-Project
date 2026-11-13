@@ -3,7 +3,7 @@ class OverallList:
         self.__filtered_list=[]
     
     @property
-    def list_overall(self):
+    def list_overall(self) -> list[object]:
         return self.__filtered_list
 
     @list_overall.setter

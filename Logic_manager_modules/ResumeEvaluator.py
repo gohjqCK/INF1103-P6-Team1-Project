@@ -36,7 +36,7 @@ class ResumeEvaluator:
       self._overall_list.list_overall[0].list=resume
 
   @property
-  def get_overall_list(self):
+  def get_overall_list(self) -> list:
     return self._overall_list
 
 

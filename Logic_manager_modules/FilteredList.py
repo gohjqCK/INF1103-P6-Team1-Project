@@ -5,8 +5,9 @@ class FilteredList(ABC):
     def __init__(self):
         self.__resume_list=[]
 
+    #Concrete Method
     @property
-    def show_profiles(self):
+    def get_list_resume_dict(self) -> list[dict]:
         profile_list=[]
         for profile in self.__resume_list:
             profile_contents=profile.get_resume
@@ -15,7 +16,7 @@ class FilteredList(ABC):
 
     #prints list
     @property
-    def list(self):
+    def list(self) -> list:
         return self.__resume_list
     
     #adds to list usage
@@ -26,11 +27,3 @@ class FilteredList(ABC):
     @abstractmethod
     def output_dict(self):
         pass
-
-    #Concrete Method
-    @property
-    def list_to_profile(self):
-        profile_list=[]
-        for resume in self.list:
-            profile_list.append(resume.get_resume)
-        return profile_list

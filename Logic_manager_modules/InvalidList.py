@@ -6,7 +6,7 @@ class InvalidList(FilteredList):
 
     #Abstract method
     @property
-    def output_dict(self):
-        return {"invalid":self.list_to_profile}
+    def output_dict(self) -> dict:
+        return {"invalid":self.get_list_resume_dict}
 
 

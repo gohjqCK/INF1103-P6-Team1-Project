@@ -10,22 +10,22 @@ class Resume(ABC):
         self.__text=None
 
     @property
-    def get_file(self):
+    def get_file(self) -> str:
         return self.__file
     @property
-    def get_outcome(self):
+    def get_outcome(self) -> str:
         return self.__outcome
 
     @property
-    def get_reason(self):
+    def get_reason(self) -> str:
         return self.__reason
     
     @property
-    def get_score(self):
+    def get_score(self) -> float:
         return self.__score
         
     @property
-    def status(self):
+    def status(self) -> str:
         return self.__status
     
     @status.setter
@@ -33,7 +33,7 @@ class Resume(ABC):
         self.__status=status
 
     @property
-    def pages(self):
+    def pages(self) -> int:
         return self.__pages
 
     @pages.setter
@@ -41,7 +41,7 @@ class Resume(ABC):
         self.__pages=pages
 
     @property
-    def text(self):
+    def text(self) -> str:
         return self.__text
 
     @text.setter

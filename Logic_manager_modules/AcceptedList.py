@@ -9,14 +9,14 @@ class AcceptedList(FilteredList,Sort_score):
 
   #Abstract method
   @property
-  def output_dict(self):
-    return {"accepted":self.list_to_profile}
+  def output_dict(self) -> dict:
+    return {"accepted":self.get_list_resume_dict}
 
   @property
-  def sort_score(self):
+  def sort_score(self) -> list[dict]:
     self.list.sort(key=lambda res: res.get_score, reverse=True)
     #sort_list= sorted(self.list, )
-    return self.list_to_profile
+    return self.get_list_resume_dict
 
 ##Test data
 
