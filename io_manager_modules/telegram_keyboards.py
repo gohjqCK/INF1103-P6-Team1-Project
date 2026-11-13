@@ -1,13 +1,7 @@
 from typing import Any, Dict, List, Optional
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-PRIORITY_WEIGHTS: Dict[str, int] = {
-    "must": 4,
-    "important": 3,
-    "nice": 2,
-    "can consider": 1,
-    "reject": 0,
-}
+from io_manager_modules.telegram_validator import PRIORITY_WEIGHTS
 
 
 class TelegramKeyboards:
@@ -192,9 +186,17 @@ class TelegramKeyboards:
         return kb
 
     @staticmethod
-    def top_n_menu(current_top_n: int = 3) -> InlineKeyboardMarkup:
+    def top_n_menu(current_top_n: int = 3, max_resumes: Optional[int] = None) -> InlineKeyboardMarkup:
         kb = InlineKeyboardMarkup(row_width=2)
-        presets = [1, 3, 5, 10]
+        base_presets = [1, 3, 5, 10]
+        if max_resumes is not None and max_resumes > 0:
+            presets = [val for val in base_presets if val <= max_resumes]
+            if max_resumes not in presets and max_resumes <= 100:
+                presets.append(max_resumes)
+            presets.sort()
+        else:
+            presets = base_presets
+
         buttons = [
             InlineKeyboardButton(
                 f"{'✅ ' if val == current_top_n else ''}Top {val}",

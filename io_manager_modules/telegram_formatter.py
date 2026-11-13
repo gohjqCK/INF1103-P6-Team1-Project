@@ -1,14 +1,7 @@
 import html
 from typing import Any, Dict, List, Optional
 
-
-PRIORITY_WEIGHTS: Dict[str, int] = {
-    "must": 4,
-    "important": 3,
-    "nice": 2,
-    "can consider": 1,
-    "reject": 0,
-}
+from io_manager_modules.telegram_validator import PRIORITY_WEIGHTS
 
 
 def _esc(value: Any) -> str:

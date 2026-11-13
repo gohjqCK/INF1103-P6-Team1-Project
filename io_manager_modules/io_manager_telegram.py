@@ -1,3 +1,4 @@
+"""Telegram Bot UI controller implementing BaseIOManager via modular OOP composition."""
 import sys
 from pathlib import Path
 
@@ -6,17 +7,17 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from datetime import datetime, timedelta, timezone
-import hashlib
 import html
 import io
 import os
-import secrets
-import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from io_manager_modules.io_manager_base import BaseIOManager
+from io_manager_modules.telegram_data_bridge import TelegramDataBridge
 from io_manager_modules.telegram_formatter import TelegramFormatter
-from io_manager_modules.telegram_keyboards import PRIORITY_WEIGHTS, TelegramKeyboards
+from io_manager_modules.telegram_keyboards import TelegramKeyboards
+from io_manager_modules.telegram_session_store import TelegramSessionStore
+from io_manager_modules.telegram_validator import PRIORITY_WEIGHTS, TelegramValidator
 
 try:
     from data_manager_modules.data_manager_side import DataManager
@@ -42,29 +43,26 @@ try:
     from telebot.types import CallbackQuery, Message
     _TELEBOT_AVAILABLE = True
 except ImportError:
+    telebot = None
+    CallbackQuery = Any
+    Message = Any
     _TELEBOT_AVAILABLE = False
-
-try:
-    import pypdf
-    _PYPDF_AVAILABLE = True
-except ImportError:
-    _PYPDF_AVAILABLE = False
 
 SGT_TIMEZONE = timezone(timedelta(hours=8))
 
 
 class TelegramIOManager(BaseIOManager):
-    """Full Telegram Bot UI implementing BaseIOManager for headless server operation.
+    """Telegram Bot UI controller implementing BaseIOManager for headless server operation.
 
-    Supports multi-set business rules per company with explicit weight validation,
-    and routes all persistence through a cloud-ready DataManager contract with
-    in-memory mock/stub storage fallback.
+    Composes TelegramValidator, TelegramSessionStore, TelegramDataBridge,
+    TelegramFormatter, and TelegramKeyboards to separate validation, session state,
+    cloud/stub persistence, presentation formatting, and bot routing.
     """
 
-    MIN_RULE_LENGTH = 5
-    MAX_RULE_LENGTH = 300
-    MIN_SET_NAME_LENGTH = 2
-    MAX_SET_NAME_LENGTH = 60
+    MIN_RULE_LENGTH = TelegramValidator.MIN_RULE_LENGTH
+    MAX_RULE_LENGTH = TelegramValidator.MAX_RULE_LENGTH
+    MIN_SET_NAME_LENGTH = TelegramValidator.MIN_SET_NAME_LENGTH
+    MAX_SET_NAME_LENGTH = TelegramValidator.MAX_SET_NAME_LENGTH
     PRIORITY_WEIGHTS = dict(PRIORITY_WEIGHTS)
 
     def __init__(
@@ -73,6 +71,11 @@ class TelegramIOManager(BaseIOManager):
         data_manager: Optional[Any] = None,
         pipeline_runner: Optional[Callable[..., Any]] = None,
         use_cloud: Optional[bool] = None,
+        validator: Optional[TelegramValidator] = None,
+        session_store: Optional[TelegramSessionStore] = None,
+        data_bridge: Optional[TelegramDataBridge] = None,
+        formatter: Optional[TelegramFormatter] = None,
+        keyboards: Optional[TelegramKeyboards] = None,
     ):
         if "load_dotenv" in globals():
             load_dotenv()
@@ -100,26 +103,17 @@ class TelegramIOManager(BaseIOManager):
             else bool(use_cloud)
         )
 
-        # Helper components (Composition)
-        self._keyboards = TelegramKeyboards()
-        self._formatter = TelegramFormatter()
+        # Composed collaborators (Dependency Injection + Encapsulation)
+        self._validator = validator or TelegramValidator()
+        self._session_store = session_store or TelegramSessionStore()
+        self._bridge = data_bridge or TelegramDataBridge(
+            data_manager=self._data_manager,
+            use_cloud=self._use_cloud,
+            validator=self._validator,
+        )
+        self._formatter = formatter or TelegramFormatter()
+        self._keyboards = keyboards or TelegramKeyboards()
         self._pipeline_runner = pipeline_runner
-
-        # Thread-safe in-memory stub stores (used until DataManager cloud methods are active)
-        self._lock = threading.RLock()
-        self._next_stub_company_id = 101
-        self._next_stub_ruleset_id = 201
-        self._companies: Dict[str, Dict[str, Any]] = {}
-        self._company_rule_sets: Dict[int, List[Dict[str, Any]]] = {}
-        self._company_active_ruleset: Dict[int, int] = {}
-        self._company_resumes: Dict[int, List[Dict[str, Any]]] = {}
-        self._company_results: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
-        self._company_summaries: Dict[Tuple[int, int], Dict[str, Any]] = {}
-        self._company_filtered_resumes: Dict[Tuple[int, int], Dict[str, Any]] = {}
-
-        # Per-user / per-chat session tracking
-        self._sessions: Dict[int, Dict[str, Any]] = {}
-        self._user_active_company: Dict[int, str] = {}
         self._latest_results: List[Dict[str, Any]] = []
 
         if not _TELEBOT_AVAILABLE:
@@ -131,7 +125,7 @@ class TelegramIOManager(BaseIOManager):
         self._register_handlers()
 
     # -------------------------------------------------------------------------
-    # Server Console Logging & Rule Weight Validation
+    # Server Console Logging & Validation Delegates
     # -------------------------------------------------------------------------
 
     @staticmethod
@@ -139,56 +133,10 @@ class TelegramIOManager(BaseIOManager):
         timestamp = datetime.now(SGT_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S SGT")
         print(f"[{timestamp}] [TELEGRAM:{category}] {message}")
 
-    @classmethod
-    def _validate_and_normalize_rule(cls, text: str, priority: str) -> Dict[str, Any]:
-        """Validates rule text length, priority key, and assigns canonical numeric weight."""
-        clean_text = (text or "").strip()
-        if len(clean_text) < cls.MIN_RULE_LENGTH or len(clean_text) > cls.MAX_RULE_LENGTH:
-            raise ValueError(
-                f"Rule text must be {cls.MIN_RULE_LENGTH}-{cls.MAX_RULE_LENGTH} characters."
-            )
-
-        clean_prio = (priority or "").strip().lower()
-        if clean_prio not in cls.PRIORITY_WEIGHTS:
-            valid_list = ", ".join(cls.PRIORITY_WEIGHTS.keys())
-            raise ValueError(f"Invalid rule priority '{priority}'. Must be one of: {valid_list}.")
-
-        return {
-            "text": clean_text,
-            "priority": clean_prio,
-            "weight": cls.PRIORITY_WEIGHTS[clean_prio],
-        }
-
-    @classmethod
-    def _normalize_rules_list(
-        cls,
-        rules: Optional[List[Dict[str, Any]]],
-        strict: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """Normalizes (and optionally strictly validates) rules with verified priority & weight."""
-        normalized: List[Dict[str, Any]] = []
-        for rule in rules or []:
-            if not isinstance(rule, dict):
-                if strict:
-                    raise ValueError("Each rule must be a dictionary with 'text' and 'priority'.")
-                continue
-            text = str(rule.get("text", "")).strip()
-            prio = str(rule.get("priority", "reject")).strip().lower()
-            if strict:
-                normalized.append(cls._validate_and_normalize_rule(text, prio))
-            else:
-                if prio not in cls.PRIORITY_WEIGHTS:
-                    prio = "reject"
-                if not text:
-                    continue
-                normalized.append(
-                    {
-                        "text": text,
-                        "priority": prio,
-                        "weight": cls.PRIORITY_WEIGHTS[prio],
-                    }
-                )
-        return normalized
+    @staticmethod
+    def _cap_top_n(requested_n: int, resume_count: int) -> Tuple[int, bool]:
+        """Delegates Top-N capping to TelegramValidator."""
+        return TelegramValidator.cap_top_n(requested_n, resume_count)
 
     # -------------------------------------------------------------------------
     # BaseIOManager Contract Implementations
@@ -213,12 +161,7 @@ class TelegramIOManager(BaseIOManager):
 
     def get_employer_inputs(self, rerun_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Returns active company and active rule set inputs for BaseIOManager compatibility."""
-        with self._lock:
-            comp_name = next(iter(self._companies), "General")
-            comp_info = self._companies.get(comp_name, {})
-            comp_id = comp_info.get("company_id", 101)
-            active_set = self._dm_get_active_rule_set(comp_id)
-            rules = active_set.get("rules", []) if active_set else []
+        comp_name, comp_id, active_set, rules = self._bridge.get_default_company_inputs()
         return {
             "company_name": comp_name,
             "company_id": comp_id,
@@ -229,520 +172,15 @@ class TelegramIOManager(BaseIOManager):
         }
 
     # -------------------------------------------------------------------------
-    # Cloud-Ready DataManager Bridge (Companies, Rule Sets, Resumes, Results)
-    # -------------------------------------------------------------------------
-
-    def _dm_create_company(
-        self,
-        name: str,
-        passcode_hash: str,
-        owner_id: int,
-        invite_code: str,
-    ) -> Dict[str, Any]:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "create_company")
-        ):
-            record = self._data_manager.create_company(
-                company_name=name,
-                passcode_hash=passcode_hash,
-                owner_id=owner_id,
-                invite_code=invite_code,
-            )
-            with self._lock:
-                self._companies[record["company_name"]] = record
-            return record
-
-        with self._lock:
-            for existing_name in self._companies:
-                if existing_name.lower() == name.lower():
-                    raise ValueError(f"Company '{existing_name}' already exists.")
-
-            comp_id = self._next_stub_company_id
-            self._next_stub_company_id += 1
-            record = {
-                "company_id": comp_id,
-                "company_name": name,
-                "invite_code": invite_code,
-                "passcode_hash": passcode_hash,
-                "owner": owner_id,
-                "members": [owner_id],
-            }
-            self._companies[name] = record
-            self._company_rule_sets.setdefault(comp_id, [])
-            self._company_resumes.setdefault(comp_id, [])
-            return dict(record)
-
-    def _dm_get_company_by_invite(self, invite_code: str) -> Optional[Dict[str, Any]]:
-        code = invite_code.strip().upper()
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "get_company_by_invite")
-        ):
-            record = self._data_manager.get_company_by_invite(code)
-            if record:
-                with self._lock:
-                    self._companies[record["company_name"]] = record
-            return record
-
-        with self._lock:
-            for record in self._companies.values():
-                if str(record.get("invite_code", "")).upper() == code:
-                    return dict(record)
-        return None
-
-    def _dm_add_company_member(self, company_id: int, comp_name: str, user_id: int) -> None:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "add_company_member")
-        ):
-            self._data_manager.add_company_member(company_id=company_id, user_id=user_id)
-
-        with self._lock:
-            if comp_name in self._companies:
-                members = self._companies[comp_name].setdefault("members", [])
-                if user_id not in members:
-                    members.append(user_id)
-
-    # ---- Multi-Set Business Rules Bridge ----
-
-    def _dm_list_rule_sets(self, company_id: int) -> List[Dict[str, Any]]:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "list_company_rule_sets")
-        ):
-            sets = self._data_manager.list_company_rule_sets(company_id) or []
-            return [
-                {
-                    "rule_set_id": rs.get("rule_set_id") or rs.get("id"),
-                    "company_id": rs.get("company_id", company_id),
-                    "set_name": rs.get("set_name") or "Default",
-                    "rules": self._normalize_rules_list(rs.get("rules")),
-                }
-                for rs in sets
-            ]
-
-        with self._lock:
-            return [
-                {
-                    "rule_set_id": rs["rule_set_id"],
-                    "company_id": rs["company_id"],
-                    "set_name": rs["set_name"],
-                    "rules": self._normalize_rules_list(rs.get("rules")),
-                }
-                for rs in self._company_rule_sets.get(company_id, [])
-            ]
-
-    def _dm_get_active_rule_set(self, company_id: int) -> Optional[Dict[str, Any]]:
-        all_sets = self._dm_list_rule_sets(company_id)
-        if not all_sets:
-            with self._lock:
-                self._company_active_ruleset.pop(company_id, None)
-            return None
-
-        with self._lock:
-            active_id = self._company_active_ruleset.get(company_id)
-            if active_id is not None:
-                for rs in all_sets:
-                    if rs["rule_set_id"] == active_id:
-                        return rs
-            self._company_active_ruleset[company_id] = all_sets[0]["rule_set_id"]
-            return all_sets[0]
-
-    def _dm_set_active_rule_set(self, company_id: int, rule_set_id: int) -> Optional[Dict[str, Any]]:
-        all_sets = self._dm_list_rule_sets(company_id)
-        for rs in all_sets:
-            if rs["rule_set_id"] == rule_set_id:
-                with self._lock:
-                    self._company_active_ruleset[company_id] = rule_set_id
-                return rs
-        return None
-
-    def _dm_create_rule_set(
-        self,
-        company_id: int,
-        set_name: str,
-        rules: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
-        clean_name = (set_name or "").strip()
-        if len(clean_name) < self.MIN_SET_NAME_LENGTH or len(clean_name) > self.MAX_SET_NAME_LENGTH:
-            raise ValueError(
-                f"Rule Set name must be {self.MIN_SET_NAME_LENGTH}-{self.MAX_SET_NAME_LENGTH} characters."
-            )
-
-        existing = self._dm_list_rule_sets(company_id)
-        if any(rs["set_name"].lower() == clean_name.lower() for rs in existing):
-            raise ValueError(f"A Rule Set named '{clean_name}' already exists for this company.")
-
-        normalized_rules = self._normalize_rules_list(rules, strict=True)
-
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "create_company_rule_set")
-        ):
-            created = self._data_manager.create_company_rule_set(
-                company_id=company_id,
-                set_name=clean_name,
-                rules=normalized_rules,
-            )
-            created_set = {
-                "rule_set_id": created.get("rule_set_id") or created.get("id"),
-                "company_id": created.get("company_id", company_id),
-                "set_name": created.get("set_name", clean_name),
-                "rules": self._normalize_rules_list(created.get("rules")),
-            }
-            with self._lock:
-                self._company_active_ruleset[company_id] = created_set["rule_set_id"]
-            return created_set
-
-        with self._lock:
-            rs_id = self._next_stub_ruleset_id
-            self._next_stub_ruleset_id += 1
-            created_set = {
-                "rule_set_id": rs_id,
-                "company_id": company_id,
-                "set_name": clean_name,
-                "rules": normalized_rules,
-            }
-            self._company_rule_sets.setdefault(company_id, []).append(created_set)
-            self._company_active_ruleset[company_id] = rs_id
-            return dict(created_set)
-
-    def _dm_update_rule_set(
-        self,
-        company_id: int,
-        rule_set_id: int,
-        set_name: Optional[str] = None,
-        rules: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
-        clean_name: Optional[str] = None
-        if set_name is not None:
-            clean_name = set_name.strip()
-            if len(clean_name) < self.MIN_SET_NAME_LENGTH or len(clean_name) > self.MAX_SET_NAME_LENGTH:
-                raise ValueError(
-                    f"Rule Set name must be {self.MIN_SET_NAME_LENGTH}-{self.MAX_SET_NAME_LENGTH} characters."
-                )
-            existing = self._dm_list_rule_sets(company_id)
-            if any(
-                rs["rule_set_id"] != rule_set_id and rs["set_name"].lower() == clean_name.lower()
-                for rs in existing
-            ):
-                raise ValueError(f"Another Rule Set named '{clean_name}' already exists.")
-
-        normalized_rules = self._normalize_rules_list(rules, strict=True) if rules is not None else None
-
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "update_company_rule_set")
-        ):
-            updated = self._data_manager.update_company_rule_set(
-                company_id=company_id,
-                rule_set_id=rule_set_id,
-                set_name=clean_name,
-                rules=normalized_rules,
-            )
-            return {
-                "rule_set_id": updated.get("rule_set_id") or updated.get("id") or rule_set_id,
-                "company_id": updated.get("company_id", company_id),
-                "set_name": updated.get("set_name") or clean_name or "Default",
-                "rules": self._normalize_rules_list(updated.get("rules")),
-            }
-
-        with self._lock:
-            for rs in self._company_rule_sets.get(company_id, []):
-                if rs["rule_set_id"] == rule_set_id:
-                    if clean_name is not None:
-                        rs["set_name"] = clean_name
-                    if normalized_rules is not None:
-                        rs["rules"] = normalized_rules
-                    return {
-                        "rule_set_id": rs["rule_set_id"],
-                        "company_id": rs["company_id"],
-                        "set_name": rs["set_name"],
-                        "rules": list(rs["rules"]),
-                    }
-        raise ValueError(f"Rule Set #{rule_set_id} not found.")
-
-    def _dm_delete_rule_set(self, company_id: int, rule_set_id: int) -> bool:
-        deleted = False
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "delete_company_rule_set")
-        ):
-            deleted = bool(self._data_manager.delete_company_rule_set(company_id, rule_set_id))
-        else:
-            with self._lock:
-                sets = self._company_rule_sets.get(company_id, [])
-                new_sets = [rs for rs in sets if rs["rule_set_id"] != rule_set_id]
-                deleted = len(new_sets) < len(sets)
-                self._company_rule_sets[company_id] = new_sets
-
-        if deleted:
-            with self._lock:
-                if self._company_active_ruleset.get(company_id) == rule_set_id:
-                    self._company_active_ruleset.pop(company_id, None)
-            self._dm_get_active_rule_set(company_id)
-        return deleted
-
-    # ---- Resumes Bridge ----
-
-    def _parse_pdf_bytes_in_memory(self, file_name: str, pdf_bytes: bytes) -> Dict[str, Any]:
-        if self._data_manager is not None and hasattr(self._data_manager, "parse_pdf_bytes"):
-            resume_obj = self._data_manager.parse_pdf_bytes(file_name, pdf_bytes)
-            result = resume_obj.to_dict()
-            result["file_name"] = file_name
-            return result
-
-        if not _PYPDF_AVAILABLE:
-            return {
-                "file": file_name,
-                "file_name": file_name,
-                "status": "valid",
-                "reason": "",
-                "pages": 1,
-                "text": "",
-            }
-
-        try:
-            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-            pages = len(reader.pages)
-            text = "\n".join((p.extract_text() or "") for p in reader.pages).strip()
-            if len(text) < 200:
-                return {
-                    "file": file_name,
-                    "file_name": file_name,
-                    "status": "invalid",
-                    "reason": "No readable text (it may be a scanned image)",
-                    "pages": pages,
-                    "text": text,
-                }
-            if len(text) > 20000:
-                return {
-                    "file": file_name,
-                    "file_name": file_name,
-                    "status": "invalid",
-                    "reason": f"Too long for one resume ({pages} pages)",
-                    "pages": pages,
-                    "text": text,
-                }
-            return {
-                "file": file_name,
-                "file_name": file_name,
-                "status": "valid",
-                "reason": "",
-                "pages": pages,
-                "text": text,
-            }
-        except Exception as err:
-            return {
-                "file": file_name,
-                "file_name": file_name,
-                "status": "invalid",
-                "reason": f"Could not read the PDF file: {err}",
-                "pages": 0,
-                "text": "",
-            }
-
-    def _dm_upload_resume(
-        self,
-        company_id: int,
-        company_name: str,
-        file_name: str,
-        pdf_bytes: bytes,
-    ) -> Dict[str, Any]:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "upload_resume_bytes")
-        ):
-            result = self._data_manager.upload_resume_bytes(
-                file_name=file_name,
-                pdf_bytes=pdf_bytes,
-                company_id=company_id,
-            )
-            result.setdefault("file_name", file_name)
-            result.setdefault("source", "Supabase Cloud")
-            return result
-
-        parsed = self._parse_pdf_bytes_in_memory(file_name, pdf_bytes)
-        entry = {
-            "file": file_name,
-            "file_name": file_name,
-            "status": parsed.get("status", "valid"),
-            "reason": parsed.get("reason", ""),
-            "pages": parsed.get("pages", 0),
-            "text": parsed.get("text", ""),
-            "pdf_bytes": pdf_bytes,
-            "company_id": company_id,
-            "company_name": company_name,
-            "source": "Session Memory (Cloud Stub)",
-        }
-
-        with self._lock:
-            bucket = self._company_resumes.setdefault(company_id, [])
-            bucket = [r for r in bucket if r.get("file_name") != file_name]
-            bucket.append(entry)
-            self._company_resumes[company_id] = bucket
-        return dict(entry)
-
-    def _dm_list_resumes(self, company_id: int) -> List[Dict[str, Any]]:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "list_company_resumes")
-        ):
-            return list(self._data_manager.list_company_resumes(company_id) or [])
-
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "db_handler")
-        ):
-            rows = self._data_manager.db_handler.fetch_resume_files(company_id=company_id)
-            return [
-                {
-                    "file": row.get("file_name"),
-                    "file_name": row.get("file_name"),
-                    "status": row.get("status", "valid"),
-                    "reason": row.get("invalid_reason", ""),
-                    "pages": row.get("pages", 0),
-                    "text": row.get("parsed_text", ""),
-                    "pdf_url": row.get("pdf_url", ""),
-                    "source": "Supabase Cloud",
-                }
-                for row in rows
-            ]
-
-        with self._lock:
-            return [dict(r) for r in self._company_resumes.get(company_id, [])]
-
-    def _dm_delete_resume(self, company_id: int, file_name: str) -> bool:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "delete_company_resume")
-        ):
-            return bool(self._data_manager.delete_company_resume(company_id, file_name))
-
-        with self._lock:
-            bucket = self._company_resumes.get(company_id, [])
-            new_bucket = [r for r in bucket if r.get("file_name") != file_name]
-            removed = len(new_bucket) < len(bucket)
-            self._company_resumes[company_id] = new_bucket
-            return removed
-
-    def _dm_clear_resumes(self, company_id: int) -> None:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "clear_company_resumes")
-        ):
-            self._data_manager.clear_company_resumes(company_id)
-            return
-
-        with self._lock:
-            self._company_resumes[company_id] = []
-
-    def _dm_get_resume_pdf_bytes(self, company_id: int, file_name: str) -> Optional[bytes]:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "download_resume_bytes")
-        ):
-            return self._data_manager.download_resume_bytes(company_id, file_name)
-
-        with self._lock:
-            for item in self._company_resumes.get(company_id, []):
-                if item.get("file_name") == file_name:
-                    return item.get("pdf_bytes")
-        return None
-
-    # ---- Scoped Screening Results & Summary Bridge ----
-
-    @staticmethod
-    def _results_key(company_id: int, business_rules_id: Optional[int]) -> Tuple[int, int]:
-        return (company_id, int(business_rules_id) if business_rules_id is not None else 0)
-
-    def _dm_save_screening_results(
-        self,
-        company_id: int,
-        ranked_candidates: List[Dict[str, Any]],
-        summary_data: Optional[Dict[str, Any]],
-        filtered_resumes: Optional[Dict[str, Any]] = None,
-        business_rules_id: Optional[int] = None,
-    ) -> None:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "save_screening_results")
-        ):
-            self._data_manager.save_screening_results(
-                company_id=company_id,
-                ranked_candidates=ranked_candidates,
-                summary_data=summary_data,
-                filtered_resumes=filtered_resumes,
-                business_rules_id=business_rules_id,
-            )
-
-        key = self._results_key(company_id, business_rules_id)
-        with self._lock:
-            self._company_results[key] = list(ranked_candidates)
-            if summary_data is not None:
-                self._company_summaries[key] = dict(summary_data)
-            if filtered_resumes is not None:
-                self._company_filtered_resumes[key] = dict(filtered_resumes)
-
-    def _dm_get_screening_results(
-        self,
-        company_id: int,
-        business_rules_id: Optional[int] = None,
-    ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        if (
-            self._use_cloud
-            and self._data_manager is not None
-            and hasattr(self._data_manager, "get_screening_results")
-        ):
-            res = self._data_manager.get_screening_results(
-                company_id=company_id,
-                business_rules_id=business_rules_id,
-            )
-            if isinstance(res, tuple) and len(res) == 2:
-                return res[0] or [], res[1]
-
-        key = self._results_key(company_id, business_rules_id)
-        with self._lock:
-            return (
-                list(self._company_results.get(key, [])),
-                self._company_summaries.get(key),
-            )
-
-    # -------------------------------------------------------------------------
     # Session & Helper Utilities
     # -------------------------------------------------------------------------
 
-    def _get_session(self, chat_id: int) -> Dict[str, Any]:
-        with self._lock:
-            if chat_id not in self._sessions:
-                self._sessions[chat_id] = {"top_n": 3, "pending_rule_text": None}
-            return self._sessions[chat_id]
-
     def _get_active_company(self, user_id: int) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
-        with self._lock:
-            comp_name = self._user_active_company.get(user_id)
-            if comp_name and comp_name in self._companies:
-                return comp_name, self._companies[comp_name]
-            for name, info in self._companies.items():
-                if user_id == info.get("owner") or user_id in info.get("members", []):
-                    self._user_active_company[user_id] = name
-                    return name, info
-        return None, None
+        active_name = self._session_store.get_active_company_name(user_id)
+        comp_name, comp_info = self._bridge.resolve_user_company(user_id, active_name=active_name)
+        if comp_name and comp_name != active_name:
+            self._session_store.set_active_company_name(user_id, comp_name)
+        return comp_name, comp_info
 
     def _send_safe_html(
         self,
@@ -791,15 +229,14 @@ class TelegramIOManager(BaseIOManager):
             return
 
         comp_id = comp_info["company_id"]
-        active_set = self._dm_get_active_rule_set(comp_id)
+        active_set = self._bridge.get_active_rule_set(comp_id)
         active_set_id = active_set["rule_set_id"] if active_set else None
         active_set_name = active_set["set_name"] if active_set else None
         rules = active_set.get("rules", []) if active_set else []
 
-        resumes = self._dm_list_resumes(comp_id)
-        results, _ = self._dm_get_screening_results(comp_id, business_rules_id=active_set_id)
-        session = self._get_session(chat_id)
-        top_n = session.get("top_n", 3)
+        resumes = self._bridge.list_resumes(comp_id)
+        results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
+        top_n = self._session_store.get_effective_top_n(chat_id, len(resumes))
 
         msg = self._formatter.format_dashboard(
             company_name=comp_name,
@@ -823,8 +260,8 @@ class TelegramIOManager(BaseIOManager):
         )
 
     def _send_rules_menu(self, chat_id: int, comp_name: str, comp_id: int) -> None:
-        all_sets = self._dm_list_rule_sets(comp_id)
-        active_set = self._dm_get_active_rule_set(comp_id)
+        all_sets = self._bridge.list_rule_sets(comp_id)
+        active_set = self._bridge.get_active_rule_set(comp_id)
         rules = active_set.get("rules", []) if active_set else []
         msg = self._formatter.format_rules_list(comp_name, active_set, all_sets)
         self._send_safe_html(
@@ -838,13 +275,284 @@ class TelegramIOManager(BaseIOManager):
         )
 
     def _send_resumes_menu(self, chat_id: int, comp_name: str, comp_id: int) -> None:
-        resumes = self._dm_list_resumes(comp_id)
+        resumes = self._bridge.list_resumes(comp_id)
         msg = self._formatter.format_resumes_list(comp_name, resumes)
         self._send_safe_html(
             chat_id,
             msg,
             reply_markup=self._keyboards.resumes_menu(has_resumes=bool(resumes)),
         )
+
+    # -------------------------------------------------------------------------
+    # Callback Sub-Routers (Rules, Resumes, Top-N)
+    # -------------------------------------------------------------------------
+
+    def _handle_rules_callbacks(
+        self, data: str, chat_id: int, comp_name: str, comp_id: int
+    ) -> bool:
+        """Handles rule-set and rule CRUD callbacks. Returns True if handled."""
+        if data == "menu_rules":
+            self._send_rules_menu(chat_id, comp_name, comp_id)
+            return True
+
+        if data == "ruleset_create":
+            msg = self._bot.send_message(
+                chat_id,
+                "🆕 <b>Create New Business Rule Set</b>\n\n"
+                "Enter a name for this role/set (e.g. <code>Finance</code>, <code>Cleaners</code>):",
+            )
+            self._bot.register_next_step_handler(msg, self._step_create_ruleset_name, comp_name, comp_id)
+            return True
+
+        if data == "ruleset_select_menu":
+            all_sets = self._bridge.list_rule_sets(comp_id)
+            if not all_sets:
+                self._bot.send_message(chat_id, "ℹ️ No rule sets exist yet. Create one first!")
+                self._send_rules_menu(chat_id, comp_name, comp_id)
+                return True
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            active_id = active_set["rule_set_id"] if active_set else None
+            self._bot.send_message(
+                chat_id,
+                "🔀 <b>Select a Rule Set to activate:</b>",
+                reply_markup=self._keyboards.rule_sets_selection_menu(all_sets, active_id),
+            )
+            return True
+
+        if data.startswith("ruleset_pick:"):
+            set_id = int(data.split(":", 1)[1])
+            picked = self._bridge.set_active_rule_set(comp_id, set_id)
+            if picked:
+                self._log_server_event(
+                    "RULES",
+                    f"company='{comp_name}' swapped active rule set -> '{picked['set_name']}' (#{set_id})",
+                )
+                self._bot.send_message(
+                    chat_id,
+                    f"🔀 Switched active Rule Set to <b>{html.escape(picked['set_name'])}</b>!",
+                )
+            else:
+                self._bot.send_message(chat_id, "⚠️ Rule Set not found.")
+            self._send_rules_menu(chat_id, comp_name, comp_id)
+            return True
+
+        if data == "ruleset_rename":
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            if not active_set:
+                self._bot.send_message(chat_id, "⚠️ No active Rule Set to rename.")
+                self._send_rules_menu(chat_id, comp_name, comp_id)
+                return True
+            msg = self._bot.send_message(
+                chat_id,
+                f"✏️ Enter a new name for Rule Set <b>{html.escape(active_set['set_name'])}</b>:",
+            )
+            self._bot.register_next_step_handler(
+                msg, self._step_rename_ruleset, comp_name, comp_id, active_set["rule_set_id"]
+            )
+            return True
+
+        if data == "ruleset_delete":
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            if not active_set:
+                self._bot.send_message(chat_id, "⚠️ No active Rule Set to delete.")
+                self._send_rules_menu(chat_id, comp_name, comp_id)
+                return True
+            deleted_name = active_set["set_name"]
+            if self._bridge.delete_rule_set(comp_id, active_set["rule_set_id"]):
+                self._log_server_event(
+                    "RULES",
+                    f"company='{comp_name}' deleted rule set '{deleted_name}' (#{active_set['rule_set_id']})",
+                )
+                self._bot.send_message(chat_id, f"🗑 Deleted Rule Set <b>{html.escape(deleted_name)}</b>.")
+            self._send_rules_menu(chat_id, comp_name, comp_id)
+            return True
+
+        if data == "rule_add":
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            if not active_set:
+                self._bot.send_message(chat_id, "⚠️ Create a Rule Set first before adding rules.")
+                self._send_rules_menu(chat_id, comp_name, comp_id)
+                return True
+            msg = self._bot.send_message(
+                chat_id,
+                f"✏️ Enter a new rule for <b>{html.escape(active_set['set_name'])}</b> "
+                f"({self.MIN_RULE_LENGTH}-{self.MAX_RULE_LENGTH} characters):",
+            )
+            self._bot.register_next_step_handler(
+                msg, self._step_add_rule_text, comp_name, comp_id, active_set["rule_set_id"]
+            )
+            return True
+
+        if data.startswith("rule_prio:"):
+            prio = data.split(":", 1)[1]
+            rule_text = self._session_store.get_pending_rule_text(chat_id)
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            if rule_text and active_set:
+                rules = list(active_set.get("rules") or [])
+                if any(r.get("text", "").lower() == rule_text.lower() for r in rules):
+                    self._bot.send_message(
+                        chat_id,
+                        f"⚠️ Rule <i>\"{html.escape(rule_text)}\"</i> already exists in this set.",
+                    )
+                else:
+                    try:
+                        validated = self._validator.validate_and_normalize_rule(rule_text, prio)
+                        rules.append(validated)
+                        self._bridge.update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
+                        self._log_server_event(
+                            "RULES",
+                            f"company='{comp_name}' set='{active_set['set_name']}' "
+                            f"appended [{validated['priority']} | weight={validated['weight']}] '{validated['text']}'",
+                        )
+                        self._bot.send_message(
+                            chat_id,
+                            f"✅ Appended to <b>{html.escape(active_set['set_name'])}</b>:\n"
+                            f"<b>[{html.escape(validated['priority'].upper())} | Weight: {validated['weight']}]</b> "
+                            f"{html.escape(validated['text'])}",
+                        )
+                    except ValueError as err:
+                        self._bot.send_message(chat_id, f"❌ Invalid rule: {html.escape(str(err))}")
+                self._session_store.set_pending_rule_text(chat_id, None)
+            self._send_rules_menu(chat_id, comp_name, comp_id)
+            return True
+
+        if data == "rule_edit_menu":
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            rules = active_set.get("rules", []) if active_set else []
+            if not rules:
+                self._bot.send_message(chat_id, "ℹ️ No rules in this set to update.")
+                return True
+            self._bot.send_message(
+                chat_id,
+                f"✏️ <b>Select a rule in {html.escape(active_set['set_name'])} to update:</b>",
+                reply_markup=self._keyboards.edit_rules_menu(rules),
+            )
+            return True
+
+        if data.startswith("rule_edit_pick:"):
+            idx = int(data.split(":", 1)[1])
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            rules = active_set.get("rules", []) if active_set else []
+            if not (1 <= idx <= len(rules)):
+                self._bot.send_message(chat_id, "⚠️ Rule not found.")
+                self._send_rules_menu(chat_id, comp_name, comp_id)
+                return True
+            rule = rules[idx - 1]
+            self._bot.send_message(
+                chat_id,
+                f"✏️ <b>Updating Rule #{idx}</b>\n\n"
+                f"<b>Text:</b> {html.escape(rule['text'])}\n"
+                f"<b>Priority:</b> {html.escape(rule['priority'].upper())} (Weight: {rule['weight']})\n\n"
+                f"What would you like to change?",
+                reply_markup=self._keyboards.edit_rule_action_menu(idx),
+            )
+            return True
+
+        if data.startswith("rule_edit_text:"):
+            idx = int(data.split(":", 1)[1])
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            rules = active_set.get("rules", []) if active_set else []
+            if not (active_set and 1 <= idx <= len(rules)):
+                self._bot.send_message(chat_id, "⚠️ Rule not found.")
+                self._send_rules_menu(chat_id, comp_name, comp_id)
+                return True
+            msg = self._bot.send_message(
+                chat_id,
+                f"✏️ Enter the updated text for Rule #{idx} "
+                f"({self.MIN_RULE_LENGTH}-{self.MAX_RULE_LENGTH} characters):\n\n"
+                f"<i>Current: {html.escape(rules[idx - 1]['text'])}</i>",
+            )
+            self._bot.register_next_step_handler(
+                msg, self._step_edit_rule_text, comp_name, comp_id, active_set["rule_set_id"], idx
+            )
+            return True
+
+        if data.startswith("rule_edit_prio:"):
+            idx = int(data.split(":", 1)[1])
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            rules = active_set.get("rules", []) if active_set else []
+            if not (1 <= idx <= len(rules)):
+                self._bot.send_message(chat_id, "⚠️ Rule not found.")
+                self._send_rules_menu(chat_id, comp_name, comp_id)
+                return True
+            self._bot.send_message(
+                chat_id,
+                f"⚖️ Select new priority & weight for:\n<i>\"{html.escape(rules[idx - 1]['text'])}\"</i>",
+                reply_markup=self._keyboards.edit_rule_priority_menu(idx),
+            )
+            return True
+
+        if data.startswith("rule_set_prio:"):
+            parts = data.split(":", 2)
+            idx, new_prio = int(parts[1]), parts[2]
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            rules = list(active_set.get("rules") or []) if active_set else []
+            if active_set and 1 <= idx <= len(rules):
+                try:
+                    updated_rule = self._validator.validate_and_normalize_rule(rules[idx - 1]["text"], new_prio)
+                    rules[idx - 1] = updated_rule
+                    self._bridge.update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
+                    self._log_server_event(
+                        "RULES",
+                        f"company='{comp_name}' set='{active_set['set_name']}' "
+                        f"updated rule #{idx} -> [{updated_rule['priority']} | weight={updated_rule['weight']}]",
+                    )
+                    self._bot.send_message(
+                        chat_id,
+                        f"✅ Updated Rule #{idx} to <b>[{html.escape(updated_rule['priority'].upper())} | Weight: {updated_rule['weight']}]</b>.",
+                    )
+                except ValueError as err:
+                    self._bot.send_message(chat_id, f"❌ {html.escape(str(err))}")
+            self._send_rules_menu(chat_id, comp_name, comp_id)
+            return True
+
+        if data == "rule_del_menu":
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            rules = active_set.get("rules", []) if active_set else []
+            if not rules:
+                self._bot.send_message(chat_id, "ℹ️ No rules available to delete.")
+                return True
+            self._bot.send_message(
+                chat_id,
+                f"Tap a rule in <b>{html.escape(active_set['set_name'])}</b> to delete it:",
+                reply_markup=self._keyboards.delete_rules_menu(rules),
+            )
+            return True
+
+        if data.startswith("rule_del:"):
+            idx = int(data.split(":", 1)[1])
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            rules = list(active_set.get("rules") or []) if active_set else []
+            if active_set and 1 <= idx <= len(rules):
+                removed = rules.pop(idx - 1)
+                self._bridge.update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
+                self._log_server_event(
+                    "RULES",
+                    f"company='{comp_name}' set='{active_set['set_name']}' deleted '{removed.get('text', '')}'",
+                )
+                self._bot.send_message(
+                    chat_id,
+                    f"🗑 Removed Rule: <b>{html.escape(str(removed.get('text', '')))}</b>",
+                )
+            self._send_rules_menu(chat_id, comp_name, comp_id)
+            return True
+
+        if data == "rule_clear":
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            if active_set:
+                self._bridge.update_rule_set(comp_id, active_set["rule_set_id"], rules=[])
+                self._log_server_event(
+                    "RULES",
+                    f"company='{comp_name}' cleared all rules in set '{active_set['set_name']}'.",
+                )
+                self._bot.send_message(
+                    chat_id,
+                    f"🧹 Cleared all rules in <b>{html.escape(active_set['set_name'])}</b>.",
+                )
+            self._send_rules_menu(chat_id, comp_name, comp_id)
+            return True
+
+        return False
 
     # -------------------------------------------------------------------------
     # Telegram Handler Registration
@@ -883,7 +591,7 @@ class TelegramIOManager(BaseIOManager):
                 file_info = self._bot.get_file(doc.file_id)
                 pdf_bytes = self._bot.download_file(file_info.file_path)
 
-                upload_info = self._dm_upload_resume(
+                upload_info = self._bridge.upload_resume(
                     company_id=comp_id,
                     company_name=comp_name,
                     file_name=doc.file_name,
@@ -893,7 +601,7 @@ class TelegramIOManager(BaseIOManager):
                 status = upload_info.get("status", "valid")
                 pages = upload_info.get("pages", 0)
                 reason = html.escape(str(upload_info.get("reason", "")))
-                total_resumes = len(self._dm_list_resumes(comp_id))
+                total_resumes = len(self._bridge.list_resumes(comp_id))
 
                 self._log_server_event(
                     "UPLOAD",
@@ -952,8 +660,7 @@ class TelegramIOManager(BaseIOManager):
                 return
 
             if data == "menu_switch":
-                with self._lock:
-                    self._user_active_company.pop(user_id, None)
+                self._session_store.clear_active_company(user_id)
                 self._log_server_event("AUTH", f"User {user_id} opened Switch/Logout menu.")
                 self._bot.send_message(
                     chat_id,
@@ -975,278 +682,17 @@ class TelegramIOManager(BaseIOManager):
 
             if data == "menu_main":
                 self._send_main_dashboard(chat_id, user_id)
+                return
 
-            # ---- Business Rule Sets Management ----
-            elif data == "menu_rules":
-                self._send_rules_menu(chat_id, comp_name, comp_id)
-
-            elif data == "ruleset_create":
-                msg = self._bot.send_message(
-                    chat_id,
-                    "🆕 <b>Create New Business Rule Set</b>\n\n"
-                    "Enter a name for this role/set (e.g. <code>Finance</code>, <code>Cleaners</code>):",
-                )
-                self._bot.register_next_step_handler(msg, self._step_create_ruleset_name, comp_name, comp_id)
-
-            elif data == "ruleset_select_menu":
-                all_sets = self._dm_list_rule_sets(comp_id)
-                if not all_sets:
-                    self._bot.send_message(chat_id, "ℹ️ No rule sets exist yet. Create one first!")
-                    self._send_rules_menu(chat_id, comp_name, comp_id)
-                    return
-                active_set = self._dm_get_active_rule_set(comp_id)
-                active_id = active_set["rule_set_id"] if active_set else None
-                self._bot.send_message(
-                    chat_id,
-                    "🔀 <b>Select a Rule Set to activate:</b>",
-                    reply_markup=self._keyboards.rule_sets_selection_menu(all_sets, active_id),
-                )
-
-            elif data.startswith("ruleset_pick:"):
-                set_id = int(data.split(":", 1)[1])
-                picked = self._dm_set_active_rule_set(comp_id, set_id)
-                if picked:
-                    self._log_server_event(
-                        "RULES",
-                        f"company='{comp_name}' swapped active rule set -> '{picked['set_name']}' (#{set_id})",
-                    )
-                    self._bot.send_message(
-                        chat_id,
-                        f"🔀 Switched active Rule Set to <b>{html.escape(picked['set_name'])}</b>!",
-                    )
-                else:
-                    self._bot.send_message(chat_id, "⚠️ Rule Set not found.")
-                self._send_rules_menu(chat_id, comp_name, comp_id)
-
-            elif data == "ruleset_rename":
-                active_set = self._dm_get_active_rule_set(comp_id)
-                if not active_set:
-                    self._bot.send_message(chat_id, "⚠️ No active Rule Set to rename.")
-                    self._send_rules_menu(chat_id, comp_name, comp_id)
-                    return
-                msg = self._bot.send_message(
-                    chat_id,
-                    f"✏️ Enter a new name for Rule Set <b>{html.escape(active_set['set_name'])}</b>:",
-                )
-                self._bot.register_next_step_handler(
-                    msg,
-                    self._step_rename_ruleset,
-                    comp_name,
-                    comp_id,
-                    active_set["rule_set_id"],
-                )
-
-            elif data == "ruleset_delete":
-                active_set = self._dm_get_active_rule_set(comp_id)
-                if not active_set:
-                    self._bot.send_message(chat_id, "⚠️ No active Rule Set to delete.")
-                    self._send_rules_menu(chat_id, comp_name, comp_id)
-                    return
-                deleted_name = active_set["set_name"]
-                if self._dm_delete_rule_set(comp_id, active_set["rule_set_id"]):
-                    self._log_server_event(
-                        "RULES",
-                        f"company='{comp_name}' deleted rule set '{deleted_name}' (#{active_set['rule_set_id']})",
-                    )
-                    self._bot.send_message(
-                        chat_id,
-                        f"🗑 Deleted Rule Set <b>{html.escape(deleted_name)}</b>.",
-                    )
-                self._send_rules_menu(chat_id, comp_name, comp_id)
-
-            # ---- Rules CRUD Inside Active Set ----
-            elif data == "rule_add":
-                active_set = self._dm_get_active_rule_set(comp_id)
-                if not active_set:
-                    self._bot.send_message(chat_id, "⚠️ Create a Rule Set first before adding rules.")
-                    self._send_rules_menu(chat_id, comp_name, comp_id)
-                    return
-                msg = self._bot.send_message(
-                    chat_id,
-                    f"✏️ Enter a new rule for <b>{html.escape(active_set['set_name'])}</b> "
-                    f"({self.MIN_RULE_LENGTH}-{self.MAX_RULE_LENGTH} characters):",
-                )
-                self._bot.register_next_step_handler(
-                    msg,
-                    self._step_add_rule_text,
-                    comp_name,
-                    comp_id,
-                    active_set["rule_set_id"],
-                )
-
-            elif data.startswith("rule_prio:"):
-                prio = data.split(":", 1)[1]
-                session = self._get_session(chat_id)
-                rule_text = session.get("pending_rule_text")
-                active_set = self._dm_get_active_rule_set(comp_id)
-                if rule_text and active_set:
-                    rules = list(active_set.get("rules") or [])
-                    if any(r.get("text", "").lower() == rule_text.lower() for r in rules):
-                        self._bot.send_message(
-                            chat_id,
-                            f"⚠️ Rule <i>\"{html.escape(rule_text)}\"</i> already exists in this set.",
-                        )
-                    else:
-                        try:
-                            validated = self._validate_and_normalize_rule(rule_text, prio)
-                            rules.append(validated)
-                            self._dm_update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
-                            self._log_server_event(
-                                "RULES",
-                                f"company='{comp_name}' set='{active_set['set_name']}' "
-                                f"appended [{validated['priority']} | weight={validated['weight']}] '{validated['text']}'",
-                            )
-                            self._bot.send_message(
-                                chat_id,
-                                f"✅ Appended to <b>{html.escape(active_set['set_name'])}</b>:\n"
-                                f"<b>[{html.escape(validated['priority'].upper())} | Weight: {validated['weight']}]</b> "
-                                f"{html.escape(validated['text'])}",
-                            )
-                        except ValueError as err:
-                            self._bot.send_message(chat_id, f"❌ Invalid rule: {html.escape(str(err))}")
-                    session["pending_rule_text"] = None
-                self._send_rules_menu(chat_id, comp_name, comp_id)
-
-            elif data == "rule_edit_menu":
-                active_set = self._dm_get_active_rule_set(comp_id)
-                rules = active_set.get("rules", []) if active_set else []
-                if not rules:
-                    self._bot.send_message(chat_id, "ℹ️ No rules in this set to update.")
-                    return
-                self._bot.send_message(
-                    chat_id,
-                    f"✏️ <b>Select a rule in {html.escape(active_set['set_name'])} to update:</b>",
-                    reply_markup=self._keyboards.edit_rules_menu(rules),
-                )
-
-            elif data.startswith("rule_edit_pick:"):
-                idx = int(data.split(":", 1)[1])
-                active_set = self._dm_get_active_rule_set(comp_id)
-                rules = active_set.get("rules", []) if active_set else []
-                if not (1 <= idx <= len(rules)):
-                    self._bot.send_message(chat_id, "⚠️ Rule not found.")
-                    self._send_rules_menu(chat_id, comp_name, comp_id)
-                    return
-                rule = rules[idx - 1]
-                self._bot.send_message(
-                    chat_id,
-                    f"✏️ <b>Updating Rule #{idx}</b>\n\n"
-                    f"<b>Text:</b> {html.escape(rule['text'])}\n"
-                    f"<b>Priority:</b> {html.escape(rule['priority'].upper())} (Weight: {rule['weight']})\n\n"
-                    f"What would you like to change?",
-                    reply_markup=self._keyboards.edit_rule_action_menu(idx),
-                )
-
-            elif data.startswith("rule_edit_text:"):
-                idx = int(data.split(":", 1)[1])
-                active_set = self._dm_get_active_rule_set(comp_id)
-                rules = active_set.get("rules", []) if active_set else []
-                if not (active_set and 1 <= idx <= len(rules)):
-                    self._bot.send_message(chat_id, "⚠️ Rule not found.")
-                    self._send_rules_menu(chat_id, comp_name, comp_id)
-                    return
-                msg = self._bot.send_message(
-                    chat_id,
-                    f"✏️ Enter the updated text for Rule #{idx} "
-                    f"({self.MIN_RULE_LENGTH}-{self.MAX_RULE_LENGTH} characters):\n\n"
-                    f"<i>Current: {html.escape(rules[idx - 1]['text'])}</i>",
-                )
-                self._bot.register_next_step_handler(
-                    msg,
-                    self._step_edit_rule_text,
-                    comp_name,
-                    comp_id,
-                    active_set["rule_set_id"],
-                    idx,
-                )
-
-            elif data.startswith("rule_edit_prio:"):
-                idx = int(data.split(":", 1)[1])
-                active_set = self._dm_get_active_rule_set(comp_id)
-                rules = active_set.get("rules", []) if active_set else []
-                if not (1 <= idx <= len(rules)):
-                    self._bot.send_message(chat_id, "⚠️ Rule not found.")
-                    self._send_rules_menu(chat_id, comp_name, comp_id)
-                    return
-                self._bot.send_message(
-                    chat_id,
-                    f"⚖️ Select new priority & weight for:\n<i>\"{html.escape(rules[idx - 1]['text'])}\"</i>",
-                    reply_markup=self._keyboards.edit_rule_priority_menu(idx),
-                )
-
-            elif data.startswith("rule_set_prio:"):
-                parts = data.split(":", 2)
-                idx = int(parts[1])
-                new_prio = parts[2]
-                active_set = self._dm_get_active_rule_set(comp_id)
-                rules = list(active_set.get("rules") or []) if active_set else []
-                if active_set and 1 <= idx <= len(rules):
-                    try:
-                        updated_rule = self._validate_and_normalize_rule(rules[idx - 1]["text"], new_prio)
-                        rules[idx - 1] = updated_rule
-                        self._dm_update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
-                        self._log_server_event(
-                            "RULES",
-                            f"company='{comp_name}' set='{active_set['set_name']}' "
-                            f"updated rule #{idx} -> [{updated_rule['priority']} | weight={updated_rule['weight']}]",
-                        )
-                        self._bot.send_message(
-                            chat_id,
-                            f"✅ Updated Rule #{idx} to <b>[{html.escape(updated_rule['priority'].upper())} | Weight: {updated_rule['weight']}]</b>.",
-                        )
-                    except ValueError as err:
-                        self._bot.send_message(chat_id, f"❌ {html.escape(str(err))}")
-                self._send_rules_menu(chat_id, comp_name, comp_id)
-
-            elif data == "rule_del_menu":
-                active_set = self._dm_get_active_rule_set(comp_id)
-                rules = active_set.get("rules", []) if active_set else []
-                if not rules:
-                    self._bot.send_message(chat_id, "ℹ️ No rules available to delete.")
-                    return
-                self._bot.send_message(
-                    chat_id,
-                    f"Tap a rule in <b>{html.escape(active_set['set_name'])}</b> to delete it:",
-                    reply_markup=self._keyboards.delete_rules_menu(rules),
-                )
-
-            elif data.startswith("rule_del:"):
-                idx = int(data.split(":", 1)[1])
-                active_set = self._dm_get_active_rule_set(comp_id)
-                rules = list(active_set.get("rules") or []) if active_set else []
-                if active_set and 1 <= idx <= len(rules):
-                    removed = rules.pop(idx - 1)
-                    self._dm_update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
-                    self._log_server_event(
-                        "RULES",
-                        f"company='{comp_name}' set='{active_set['set_name']}' deleted '{removed.get('text', '')}'",
-                    )
-                    self._bot.send_message(
-                        chat_id,
-                        f"🗑 Removed Rule: <b>{html.escape(str(removed.get('text', '')))}</b>",
-                    )
-                self._send_rules_menu(chat_id, comp_name, comp_id)
-
-            elif data == "rule_clear":
-                active_set = self._dm_get_active_rule_set(comp_id)
-                if active_set:
-                    self._dm_update_rule_set(comp_id, active_set["rule_set_id"], rules=[])
-                    self._log_server_event(
-                        "RULES",
-                        f"company='{comp_name}' cleared all rules in set '{active_set['set_name']}'.",
-                    )
-                    self._bot.send_message(
-                        chat_id,
-                        f"🧹 Cleared all rules in <b>{html.escape(active_set['set_name'])}</b>.",
-                    )
-                self._send_rules_menu(chat_id, comp_name, comp_id)
+            if self._handle_rules_callbacks(data, chat_id, comp_name, comp_id):
+                return
 
             # ---- Resume Management ----
-            elif data == "menu_resumes":
+            if data == "menu_resumes":
                 self._send_resumes_menu(chat_id, comp_name, comp_id)
 
             elif data == "res_del_menu":
-                resumes = self._dm_list_resumes(comp_id)
+                resumes = self._bridge.list_resumes(comp_id)
                 if not resumes:
                     self._bot.send_message(chat_id, "ℹ️ No resumes available to delete.")
                     return
@@ -1258,43 +704,59 @@ class TelegramIOManager(BaseIOManager):
 
             elif data.startswith("res_del:"):
                 idx = int(data.split(":", 1)[1])
-                resumes = self._dm_list_resumes(comp_id)
+                resumes = self._bridge.list_resumes(comp_id)
                 if 1 <= idx <= len(resumes):
                     target_name = resumes[idx - 1].get("file_name") or resumes[idx - 1].get("file")
-                    if target_name and self._dm_delete_resume(comp_id, target_name):
+                    if target_name and self._bridge.delete_resume(comp_id, target_name):
                         self._log_server_event("RESUMES", f"company='{comp_name}' deleted '{target_name}'")
                         self._bot.send_message(chat_id, f"🗑 Removed Resume: <b>{html.escape(target_name)}</b>")
                 self._send_resumes_menu(chat_id, comp_name, comp_id)
 
             elif data == "res_clear":
-                self._dm_clear_resumes(comp_id)
+                self._bridge.clear_resumes(comp_id)
                 self._log_server_event("RESUMES", f"company='{comp_name}' cleared all resumes.")
                 self._bot.send_message(chat_id, "🧹 All resumes cleared for this company.")
                 self._send_resumes_menu(chat_id, comp_name, comp_id)
 
             # ---- Top-N Limit Configuration ----
             elif data == "menu_topn":
-                curr_n = self._get_session(chat_id).get("top_n", 3)
+                resume_count = len(self._bridge.list_resumes(comp_id))
+                curr_n = self._session_store.get_effective_top_n(chat_id, resume_count)
+                avail_hint = (
+                    f"\nUploaded resumes: <b>{resume_count}</b> (max limit: <b>{resume_count}</b>)"
+                    if resume_count > 0
+                    else "\n<i>No resumes uploaded yet — limit will auto-cap once resumes are added.</i>"
+                )
                 self._bot.send_message(
                     chat_id,
                     f"🎯 <b>Select Candidate Shortlist Limit (Top N):</b>\n\n"
-                    f"Current limit: <b>{curr_n}</b>",
-                    reply_markup=self._keyboards.top_n_menu(curr_n),
+                    f"Current limit: <b>{curr_n}</b>{avail_hint}",
+                    reply_markup=self._keyboards.top_n_menu(curr_n, max_resumes=resume_count),
                 )
 
             elif data == "set_topn_custom":
+                resume_count = len(self._bridge.list_resumes(comp_id))
+                max_n = resume_count if resume_count > 0 else 100
                 msg = self._bot.send_message(
                     chat_id,
-                    "✏️ <b>Enter Custom Top N Limit:</b>\n"
-                    "Send a positive whole number between <code>1</code> and <code>100</code>:",
+                    f"✏️ <b>Enter Custom Top N Limit:</b>\n"
+                    f"Send a positive whole number between <code>1</code> and <code>{max_n}</code>:",
                 )
                 self._bot.register_next_step_handler(msg, self._step_set_custom_topn)
 
             elif data.startswith("set_topn:"):
-                val = int(data.split(":", 1)[1])
-                self._get_session(chat_id)["top_n"] = val
-                self._log_server_event("CONFIG", f"company='{comp_name}' set top_n={val}")
-                self._bot.send_message(chat_id, f"🎯 <b>Top N Shortlist Limit set to {val}!</b>")
+                requested_n = int(data.split(":", 1)[1])
+                resume_count = len(self._bridge.list_resumes(comp_id))
+                effective_n, was_capped = self._validator.cap_top_n(requested_n, resume_count)
+                self._session_store.set_top_n(chat_id, effective_n)
+                self._log_server_event("CONFIG", f"company='{comp_name}' set top_n={effective_n}")
+                if was_capped:
+                    self._bot.send_message(
+                        chat_id,
+                        f"ℹ️ Only <b>{resume_count}</b> resume(s) uploaded — Top N Limit capped to <b>{effective_n}</b>!",
+                    )
+                else:
+                    self._bot.send_message(chat_id, f"🎯 <b>Top N Shortlist Limit set to {effective_n}!</b>")
                 self._send_main_dashboard(chat_id, user_id)
 
             # ---- Screening, Results & Summary (Scoped to Active Rule Set) ----
@@ -1309,10 +771,10 @@ class TelegramIOManager(BaseIOManager):
 
             elif data.startswith("cand_view:"):
                 idx = int(data.split(":", 1)[1])
-                active_set = self._dm_get_active_rule_set(comp_id)
+                active_set = self._bridge.get_active_rule_set(comp_id)
                 active_set_id = active_set["rule_set_id"] if active_set else None
-                results, _ = self._dm_get_screening_results(comp_id, business_rules_id=active_set_id)
-                top_n = self._get_session(chat_id).get("top_n", 3)
+                results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
+                top_n = self._session_store.get_top_n(chat_id)
                 ranked = results[:top_n]
                 if 1 <= idx <= len(ranked):
                     msg = self._formatter.format_candidate_profile(ranked[idx - 1], idx)
@@ -1338,35 +800,46 @@ class TelegramIOManager(BaseIOManager):
             self._bot.register_next_step_handler(msg, self._step_set_custom_topn)
             return
 
-        val = min(int(text), 100)
-        self._get_session(message.chat.id)["top_n"] = val
+        requested_n = int(text)
+        _, comp_info = self._get_active_company(message.from_user.id)
+        resume_count = len(self._bridge.list_resumes(comp_info["company_id"])) if comp_info else 0
+        val, was_capped = self._validator.cap_top_n(requested_n, resume_count)
+
+        self._session_store.set_top_n(message.chat.id, val)
         self._log_server_event("CONFIG", f"user={message.from_user.id} set custom top_n={val}")
-        self._bot.send_message(message.chat.id, f"✅ <b>Top N Shortlist Limit set to {val}!</b>")
+        if was_capped:
+            self._bot.send_message(
+                message.chat.id,
+                f"ℹ️ Only <b>{resume_count}</b> resume(s) uploaded — Top N Shortlist Limit capped to <b>{val}</b>!",
+            )
+        else:
+            self._bot.send_message(message.chat.id, f"✅ <b>Top N Shortlist Limit set to {val}!</b>")
         self._send_main_dashboard(message.chat.id, message.from_user.id)
 
     def _step_create_company_name(self, message: Message) -> None:
-        name = (message.text or "").strip()
-        if len(name) < 2:
-            self._bot.reply_to(message, "❌ Company name must be at least 2 characters. Use /start to try again.")
+        try:
+            name = self._validator.validate_company_name(message.text or "")
+        except ValueError as err:
+            self._bot.reply_to(message, f"❌ {html.escape(str(err))} Use /start to try again.")
             return
         msg = self._bot.reply_to(
             message,
-            f"🔒 Set a <b>Passcode</b> for <b>{html.escape(name)}</b> (min 4 characters):",
+            f"🔒 Set a <b>Passcode</b> for <b>{html.escape(name)}</b> (min {self._validator.MIN_PASSCODE_LENGTH} characters):",
         )
         self._bot.register_next_step_handler(msg, self._step_create_company_passcode, name)
 
     def _step_create_company_passcode(self, message: Message, name: str) -> None:
-        passcode = (message.text or "").strip()
-        if len(passcode) < 4:
-            self._bot.reply_to(message, "❌ Passcode must be at least 4 characters. Use /start to try again.")
+        try:
+            passcode = self._validator.validate_passcode(message.text or "")
+        except ValueError as err:
+            self._bot.reply_to(message, f"❌ {html.escape(str(err))} Use /start to try again.")
             return
 
-        prefix = "".join(c for c in name.upper() if c.isalnum())[:4] or "COMP"
-        invite_code = f"{prefix}-{secrets.randbelow(9000) + 1000}"
-        passcode_hash = hashlib.sha256(passcode.encode("utf-8")).hexdigest()
+        invite_code = self._validator.generate_invite_code(name)
+        passcode_hash = self._validator.hash_passcode(passcode)
 
         try:
-            record = self._dm_create_company(
+            record = self._bridge.create_company(
                 name=name,
                 passcode_hash=passcode_hash,
                 owner_id=message.from_user.id,
@@ -1377,8 +850,7 @@ class TelegramIOManager(BaseIOManager):
             return
 
         comp_id = record["company_id"]
-        with self._lock:
-            self._user_active_company[message.from_user.id] = record["company_name"]
+        self._session_store.set_active_company_name(message.from_user.id, record["company_name"])
 
         self._log_server_event(
             "AUTH",
@@ -1395,7 +867,7 @@ class TelegramIOManager(BaseIOManager):
 
     def _step_join_company_code(self, message: Message) -> None:
         code = (message.text or "").strip().upper()
-        record = self._dm_get_company_by_invite(code)
+        record = self._bridge.get_company_by_invite(code)
         if not record:
             self._bot.reply_to(message, "❌ Invalid Invite Code. Use /start to try again.")
             return
@@ -1406,17 +878,14 @@ class TelegramIOManager(BaseIOManager):
         self._bot.register_next_step_handler(msg, self._step_join_company_passcode, record)
 
     def _step_join_company_passcode(self, message: Message, record: Dict[str, Any]) -> None:
-        passcode = (message.text or "").strip()
-        target_hash = record.get("passcode_hash")
-        if hashlib.sha256(passcode.encode("utf-8")).hexdigest() != target_hash:
+        if not self._validator.verify_passcode(message.text or "", record.get("passcode_hash")):
             self._bot.reply_to(message, "❌ Incorrect Passcode. Use /start to try again.")
             return
 
         comp_name = record["company_name"]
         comp_id = record["company_id"]
-        self._dm_add_company_member(comp_id, comp_name, message.from_user.id)
-        with self._lock:
-            self._user_active_company[message.from_user.id] = comp_name
+        self._bridge.add_company_member(comp_id, comp_name, message.from_user.id)
+        self._session_store.set_active_company_name(message.from_user.id, comp_name)
 
         self._log_server_event("AUTH", f"User {message.from_user.id} joined '{comp_name}' (id=#{comp_id}).")
         self._bot.send_message(message.chat.id, f"✅ Joined <b>{html.escape(comp_name)}</b>!")
@@ -1425,7 +894,7 @@ class TelegramIOManager(BaseIOManager):
     def _step_create_ruleset_name(self, message: Message, comp_name: str, comp_id: int) -> None:
         set_name = (message.text or "").strip()
         try:
-            created = self._dm_create_rule_set(company_id=comp_id, set_name=set_name, rules=[])
+            created = self._bridge.create_rule_set(company_id=comp_id, set_name=set_name, rules=[])
         except ValueError as err:
             self._bot.reply_to(message, f"❌ {html.escape(str(err))}")
             self._send_rules_menu(message.chat.id, comp_name, comp_id)
@@ -1451,7 +920,7 @@ class TelegramIOManager(BaseIOManager):
     ) -> None:
         new_name = (message.text or "").strip()
         try:
-            updated = self._dm_update_rule_set(company_id=comp_id, rule_set_id=rule_set_id, set_name=new_name)
+            updated = self._bridge.update_rule_set(company_id=comp_id, rule_set_id=rule_set_id, set_name=new_name)
         except ValueError as err:
             self._bot.reply_to(message, f"❌ {html.escape(str(err))}")
             self._send_rules_menu(message.chat.id, comp_name, comp_id)
@@ -1483,14 +952,14 @@ class TelegramIOManager(BaseIOManager):
             self._send_rules_menu(message.chat.id, comp_name, comp_id)
             return
 
-        active_set = self._dm_set_active_rule_set(comp_id, rule_set_id) or self._dm_get_active_rule_set(comp_id)
+        active_set = self._bridge.set_active_rule_set(comp_id, rule_set_id) or self._bridge.get_active_rule_set(comp_id)
         existing = active_set.get("rules", []) if active_set else []
         if any(r.get("text", "").lower() == text.lower() for r in existing):
             self._bot.reply_to(message, "❌ That rule is already in this set. Please enter a unique rule.")
             self._send_rules_menu(message.chat.id, comp_name, comp_id)
             return
 
-        self._get_session(message.chat.id)["pending_rule_text"] = text
+        self._session_store.set_pending_rule_text(message.chat.id, text)
         self._bot.send_message(
             message.chat.id,
             f"⚖️ Select priority & weight for:\n<i>\"{html.escape(text)}\"</i>",
@@ -1506,7 +975,7 @@ class TelegramIOManager(BaseIOManager):
         idx: int,
     ) -> None:
         new_text = (message.text or "").strip()
-        active_set = self._dm_set_active_rule_set(comp_id, rule_set_id) or self._dm_get_active_rule_set(comp_id)
+        active_set = self._bridge.set_active_rule_set(comp_id, rule_set_id) or self._bridge.get_active_rule_set(comp_id)
         rules = list(active_set.get("rules") or []) if active_set else []
         if not (active_set and 1 <= idx <= len(rules)):
             self._bot.reply_to(message, "⚠️ Rule set or rule not found.")
@@ -1519,14 +988,14 @@ class TelegramIOManager(BaseIOManager):
             return
 
         try:
-            updated = self._validate_and_normalize_rule(new_text, rules[idx - 1]["priority"])
+            updated = self._validator.validate_and_normalize_rule(new_text, rules[idx - 1]["priority"])
         except ValueError as err:
             self._bot.reply_to(message, f"❌ {html.escape(str(err))}")
             self._send_rules_menu(message.chat.id, comp_name, comp_id)
             return
 
         rules[idx - 1] = updated
-        self._dm_update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
+        self._bridge.update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
         self._log_server_event(
             "RULES",
             f"company='{comp_name}' set='{active_set['set_name']}' edited rule #{idx} text -> '{updated['text']}'",
@@ -1543,7 +1012,7 @@ class TelegramIOManager(BaseIOManager):
     # -------------------------------------------------------------------------
 
     def _trigger_screening(self, chat_id: int, user_id: int, comp_name: str, comp_id: int) -> None:
-        active_set = self._dm_get_active_rule_set(comp_id)
+        active_set = self._bridge.get_active_rule_set(comp_id)
         if not active_set:
             self._bot.send_message(
                 chat_id,
@@ -1552,9 +1021,9 @@ class TelegramIOManager(BaseIOManager):
             )
             return
 
-        rules = self._normalize_rules_list(active_set.get("rules"))
+        rules = self._validator.normalize_rules_list(active_set.get("rules"))
         if not rules:
-            all_sets = self._dm_list_rule_sets(comp_id)
+            all_sets = self._bridge.list_rule_sets(comp_id)
             self._bot.send_message(
                 chat_id,
                 f"⚠️ Rule Set <b>{html.escape(active_set['set_name'])}</b> has no rules yet! Append at least one rule first.",
@@ -1566,7 +1035,7 @@ class TelegramIOManager(BaseIOManager):
             )
             return
 
-        resumes = self._dm_list_resumes(comp_id)
+        resumes = self._bridge.list_resumes(comp_id)
         if not resumes:
             self._bot.send_message(
                 chat_id,
@@ -1575,8 +1044,7 @@ class TelegramIOManager(BaseIOManager):
             )
             return
 
-        session = self._get_session(chat_id)
-        top_n = min(session.get("top_n", 3), len(resumes))
+        top_n = self._session_store.get_effective_top_n(chat_id, len(resumes))
         active_set_id = active_set["rule_set_id"]
         active_set_name = active_set["set_name"]
 
@@ -1639,7 +1107,7 @@ class TelegramIOManager(BaseIOManager):
                 summary_data = None
                 filtered_resumes = None
 
-            self._dm_save_screening_results(
+            self._bridge.save_screening_results(
                 comp_id,
                 ranked_candidates,
                 summary_data,
@@ -1665,11 +1133,11 @@ class TelegramIOManager(BaseIOManager):
             )
 
     def _send_results_view(self, chat_id: int, comp_name: str, comp_id: int) -> None:
-        active_set = self._dm_get_active_rule_set(comp_id)
+        active_set = self._bridge.get_active_rule_set(comp_id)
         active_set_id = active_set["rule_set_id"] if active_set else None
         active_set_name = active_set["set_name"] if active_set else None
 
-        results, _ = self._dm_get_screening_results(comp_id, business_rules_id=active_set_id)
+        results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
         if not results:
             set_hint = f" for Rule Set <b>{html.escape(active_set_name)}</b>" if active_set_name else ""
             self._bot.send_message(
@@ -1680,17 +1148,15 @@ class TelegramIOManager(BaseIOManager):
             )
             return
 
-        session = self._get_session(chat_id)
-        ranked = results[: session.get("top_n", 3)]
+        ranked = results[: self._session_store.get_top_n(chat_id)]
         msg = self._formatter.format_results_overview(comp_name, ranked, rule_set_name=active_set_name)
         self._send_safe_html(chat_id, msg, reply_markup=self._keyboards.results_menu(len(ranked)))
 
     def _send_candidate_pdf(self, chat_id: int, comp_name: str, comp_id: int, idx: int) -> None:
-        active_set = self._dm_get_active_rule_set(comp_id)
+        active_set = self._bridge.get_active_rule_set(comp_id)
         active_set_id = active_set["rule_set_id"] if active_set else None
-        results, _ = self._dm_get_screening_results(comp_id, business_rules_id=active_set_id)
-        top_n = self._get_session(chat_id).get("top_n", 3)
-        ranked = results[:top_n]
+        results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
+        ranked = results[: self._session_store.get_top_n(chat_id)]
 
         if not ranked or idx < 1 or idx > len(ranked):
             self._bot.send_message(chat_id, "⚠️ Candidate not found.")
@@ -1701,7 +1167,7 @@ class TelegramIOManager(BaseIOManager):
             self._bot.send_message(chat_id, "❌ Resume filename not available.")
             return
 
-        pdf_bytes = self._dm_get_resume_pdf_bytes(comp_id, filename)
+        pdf_bytes = self._bridge.get_resume_pdf_bytes(comp_id, filename)
         if pdf_bytes:
             bio = io.BytesIO(pdf_bytes)
             bio.name = filename
@@ -1713,7 +1179,7 @@ class TelegramIOManager(BaseIOManager):
             )
             return
 
-        resumes = self._dm_list_resumes(comp_id)
+        resumes = self._bridge.list_resumes(comp_id)
         matched = next((r for r in resumes if (r.get("file_name") or r.get("file")) == filename), None)
         if matched and matched.get("pdf_url"):
             self._bot.send_message(
@@ -1725,12 +1191,12 @@ class TelegramIOManager(BaseIOManager):
         self._bot.send_message(chat_id, f"❌ PDF file '{html.escape(filename)}' not found in storage.")
 
     def _send_summary_breakdown(self, chat_id: int, comp_name: str, comp_id: int) -> None:
-        active_set = self._dm_get_active_rule_set(comp_id)
+        active_set = self._bridge.get_active_rule_set(comp_id)
         active_set_id = active_set["rule_set_id"] if active_set else None
         active_set_name = active_set["set_name"] if active_set else None
         rules = active_set.get("rules", []) if active_set else []
 
-        results, summary_data = self._dm_get_screening_results(comp_id, business_rules_id=active_set_id)
+        results, summary_data = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
         if not results and not summary_data:
             set_hint = f" for Rule Set <b>{html.escape(active_set_name)}</b>" if active_set_name else ""
             self._bot.send_message(
@@ -1758,7 +1224,7 @@ class TelegramIOManager(BaseIOManager):
         if not self._bot:
             self._log_server_event("ERROR", "Bot not initialized.")
             return
-        mode = "CLOUD (DataManager)" if self._use_cloud else "CLOUD STUB (In-Memory)"
+        mode = "CLOUD (DataManager)" if self._bridge.use_cloud else "CLOUD STUB (In-Memory)"
         self._log_server_event("SERVER", f"Telegram Bot polling started [{mode}]. Waiting for user messages...")
         self._bot.infinity_polling(timeout=20, long_polling_timeout=10)
 

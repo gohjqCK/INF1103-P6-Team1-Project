@@ -1,222 +1,205 @@
-"""Unit tests for I/O Manager components (CLI, Validator, Presenter, Telegram Formatter/Keyboards).
-All tests run offline without network access or live API tokens.
+"""Unit tests for the modular OOP I/O Manager components.
+All tests run offline without network access, live Telegram tokens, or Supabase calls.
 """
 import io
-import json
-import os
-import shutil
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from io_manager_modules.io_manager_base import BaseIOManager
-from io_manager_modules.io_manager_cli import CLIIOManager
-from io_manager_modules.io_manager_input_validator import InputValidator
-from io_manager_modules.io_manager_result_presenter import ResultPresenter
-from io_manager_modules.io_manager_rule_handler import RuleInputHandler
-from io_manager_modules.telegram_formatter import TelegramFormatter
-from io_manager_modules.telegram_keyboards import TelegramKeyboards
+from io_manager_modules import (
+    PRIORITY_WEIGHTS,
+    BaseIOManager,
+    TelegramDataBridge,
+    TelegramFormatter,
+    TelegramIOManager,
+    TelegramKeyboards,
+    TelegramSessionStore,
+    TelegramValidator,
+)
 
 
-class TestInputValidator(unittest.TestCase):
-    """Verifies user input validation, priority mappings, and directory checking."""
+class TestBaseIOManagerInheritance(unittest.TestCase):
+    """Verifies BaseIOManager abstract contract and TelegramIOManager polymorphism."""
+
+    def test_base_io_manager_cannot_be_instantiated_directly(self):
+        with self.assertRaises(TypeError):
+            BaseIOManager()  # type: ignore[abstract]
+
+    def test_telegram_io_manager_implements_base_contract_and_di(self):
+        self.assertTrue(issubclass(TelegramIOManager, BaseIOManager))
+        validator = TelegramValidator()
+        store = TelegramSessionStore()
+        bridge = TelegramDataBridge(use_cloud=False, validator=validator)
+
+        with patch("io_manager_modules.io_manager_telegram._TELEBOT_AVAILABLE", False):
+            tg = TelegramIOManager(
+                token="123456:TEST_TOKEN",
+                use_cloud=False,
+                validator=validator,
+                session_store=store,
+                data_bridge=bridge,
+            )
+
+        self.assertIsInstance(tg, BaseIOManager)
+        self.assertIs(tg._validator, validator)
+        self.assertIs(tg._session_store, store)
+        self.assertIs(tg._bridge, bridge)
+
+        with patch("sys.stdout", new=io.StringIO()):
+            tg.display_message("Server started")
+            tg.display_error("Minor warning")
+            tg.display_success("Completed")
+            res = tg.display_screening_results(
+                [{"file": "a.pdf", "score": 90.0}, {"file": "b.pdf", "score": 80.0}],
+                top_n=1,
+            )
+            self.assertEqual(len(res), 1)
+
+        inputs = tg.get_employer_inputs()
+        self.assertIn("company_name", inputs)
+        self.assertIn("business_rules", inputs)
+        self.assertEqual(inputs["top_n"], 3)
+
+
+class TestTelegramValidator(unittest.TestCase):
+    """Verifies rule validation, priority-weight mapping, auth validation, and Top-N capping."""
+
+    def test_validate_and_normalize_rule_assigns_weights(self):
+        for prio, expected_w in PRIORITY_WEIGHTS.items():
+            res = TelegramValidator.validate_and_normalize_rule("Must know Python", prio.upper())
+            self.assertEqual(res["priority"], prio)
+            self.assertEqual(res["weight"], expected_w)
+            self.assertEqual(res["text"], "Must know Python")
+
+    def test_validate_and_normalize_rule_rejects_short_or_invalid_priority(self):
+        with self.assertRaises(ValueError):
+            TelegramValidator.validate_and_normalize_rule("Hi", "must")
+        with self.assertRaises(ValueError):
+            TelegramValidator.validate_and_normalize_rule("Valid rule text", "critical")
+
+    def test_normalize_rules_list_lenient_vs_strict(self):
+        raw = [
+            {"text": "Python backend", "priority": "must"},
+            {"text": "", "priority": "nice"},
+            {"text": "Invalid prio rule", "priority": "unknown"},
+            "bad-item",
+        ]
+        lenient = TelegramValidator.normalize_rules_list(raw, strict=False)
+        self.assertEqual(len(lenient), 2)
+        self.assertEqual(lenient[1]["priority"], "reject")
+        self.assertEqual(lenient[1]["weight"], 0)
+
+        with self.assertRaises(ValueError):
+            TelegramValidator.normalize_rules_list(raw, strict=True)
+
+    def test_auth_and_set_name_validation_helpers(self):
+        self.assertEqual(TelegramValidator.validate_set_name("  Backend Dev  "), "Backend Dev")
+        with self.assertRaises(ValueError):
+            TelegramValidator.validate_set_name("A")
+
+        self.assertEqual(TelegramValidator.validate_company_name("  Acme  "), "Acme")
+        with self.assertRaises(ValueError):
+            TelegramValidator.validate_company_name("X")
+
+        self.assertEqual(TelegramValidator.validate_passcode("1234"), "1234")
+        with self.assertRaises(ValueError):
+            TelegramValidator.validate_passcode("123")
+
+        hashed = TelegramValidator.hash_passcode("secret")
+        self.assertTrue(TelegramValidator.verify_passcode("secret", hashed))
+        self.assertFalse(TelegramValidator.verify_passcode("wrong", hashed))
+
+        code = TelegramValidator.generate_invite_code("Acme Tech")
+        self.assertTrue(code.startswith("ACME-"))
+
+    def test_cap_top_n(self):
+        self.assertEqual(TelegramValidator.cap_top_n(10, 3), (3, True))
+        self.assertEqual(TelegramValidator.cap_top_n(2, 3), (2, False))
+        self.assertEqual(TelegramValidator.cap_top_n(5, 0), (5, False))
+        self.assertEqual(TelegramIOManager._cap_top_n(150, 0), (100, False))
+
+
+class TestTelegramSessionStore(unittest.TestCase):
+    """Verifies per-chat session isolation, active company state, and Top-N syncing."""
 
     def setUp(self):
-        self.validator = InputValidator()
-        self.test_dir = tempfile.mkdtemp()
+        self.store = TelegramSessionStore(default_top_n=3)
 
-    def tearDown(self):
-        shutil.rmtree(self.test_dir, ignore_errors=True)
+    def test_session_isolation_and_pending_rule_text(self):
+        self.store.set_top_n(111, 5)
+        self.store.set_pending_rule_text(111, "Knows Docker")
+        self.assertEqual(self.store.get_top_n(111), 5)
+        self.assertEqual(self.store.get_pending_rule_text(111), "Knows Docker")
 
-    @patch("builtins.input", side_effect=["2"])
-    def test_get_valid_menu_choice_accepts_valid_option(self, mock_input):
-        choice = self.validator.get_valid_menu_choice(["1", "2", "3"])
-        self.assertEqual(choice, "2")
+        # Separate chat has default state
+        self.assertEqual(self.store.get_top_n(222), 3)
+        self.assertIsNone(self.store.get_pending_rule_text(222))
 
-    @patch("builtins.input", side_effect=["invalid", "99", "1"])
-    def test_get_valid_menu_choice_retries_on_invalid_option(self, mock_input):
-        choice = self.validator.get_valid_menu_choice(["1", "2"])
-        self.assertEqual(choice, "1")
+    def test_get_effective_top_n_caps_and_updates_session(self):
+        self.store.set_top_n(111, 10)
+        self.assertEqual(self.store.get_effective_top_n(111, resume_count=2), 2)
+        self.assertEqual(self.store.get_top_n(111), 2)
 
-    @patch("builtins.input", side_effect=["1"])
-    def test_get_valid_priority_must(self, mock_input):
-        self.assertEqual(self.validator.get_valid_priority(), "must")
-
-    @patch("builtins.input", side_effect=["2"])
-    def test_get_valid_priority_important(self, mock_input):
-        self.assertEqual(self.validator.get_valid_priority(), "important")
-
-    @patch("builtins.input", side_effect=["3"])
-    def test_get_valid_priority_nice(self, mock_input):
-        self.assertEqual(self.validator.get_valid_priority(), "nice")
-
-    @patch("builtins.input", side_effect=["4"])
-    def test_get_valid_priority_can_consider(self, mock_input):
-        self.assertEqual(self.validator.get_valid_priority(), "can consider")
-
-    @patch("builtins.input", side_effect=[""])
-    def test_get_valid_priority_defaults_to_reject_on_empty(self, mock_input):
-        self.assertEqual(self.validator.get_valid_priority(), "reject")
-
-    @patch("builtins.input", side_effect=["5"])
-    def test_get_valid_priority_reject_on_choice_five(self, mock_input):
-        self.assertEqual(self.validator.get_valid_priority(), "reject")
-
-    def test_scan_pdf_count_counts_only_pdfs(self):
-        (Path(self.test_dir) / "doc1.pdf").write_text("dummy")
-        (Path(self.test_dir) / "doc2.PDF").write_text("dummy")
-        (Path(self.test_dir) / "notes.txt").write_text("dummy")
-        (Path(self.test_dir) / "image.png").write_text("dummy")
-
-        is_valid, count, err = self.validator.scan_pdf_count(self.test_dir)
-        self.assertTrue(is_valid)
-        self.assertEqual(count, 2)
-        self.assertEqual(err, "")
-
-    def test_scan_pdf_count_nonexistent_directory(self):
-        fake_path = os.path.join(self.test_dir, "does_not_exist")
-        is_valid, count, err = self.validator.scan_pdf_count(fake_path)
-        self.assertFalse(is_valid)
-        self.assertEqual(count, 0)
-        self.assertIn("does not exist", err)
-
-    @patch("builtins.input", side_effect=["abc", "-1", "0", "4"])
-    def test_get_valid_top_n_candidates_retries_and_accepts_positive(self, mock_input):
-        limit = self.validator.get_valid_top_n_candidates(max_available=10)
-        self.assertEqual(limit, 4)
-
-    @patch("builtins.input", side_effect=["10"])
-    def test_get_valid_top_n_candidates_caps_to_max_available(self, mock_input):
-        limit = self.validator.get_valid_top_n_candidates(max_available=3)
-        self.assertEqual(limit, 3)
+    def test_active_company_tracking(self):
+        self.store.set_active_company_name(999, "Acme Corp")
+        self.assertEqual(self.store.get_active_company_name(999), "Acme Corp")
+        self.store.clear_active_company(999)
+        self.assertIsNone(self.store.get_active_company_name(999))
 
 
-class TestResultPresenter(unittest.TestCase):
-    """Verifies candidate scoring sorting, profile formatting, and report output."""
+class TestTelegramDataBridge(unittest.TestCase):
+    """Verifies stub & cloud-delegated persistence inside TelegramDataBridge."""
 
-    def setUp(self):
-        self.presenter = ResultPresenter()
-        self.test_dir = tempfile.mkdtemp()
+    def test_stub_company_rules_resumes_and_scoped_results(self):
+        bridge = TelegramDataBridge(use_cloud=False)
 
-    def tearDown(self):
-        shutil.rmtree(self.test_dir, ignore_errors=True)
+        comp = bridge.create_company("Acme Tech", "hash", owner_id=10, invite_code="ACME-1234")
+        cid = comp["company_id"]
+        self.assertIsNotNone(bridge.get_company_by_invite("acme-1234"))
+        bridge.add_company_member(cid, "Acme Tech", 20)
+        name, info = bridge.resolve_user_company(20)
+        self.assertEqual(name, "Acme Tech")
+        self.assertIn(20, info["members"])
 
-    def test_get_candidate_sort_score_dict(self):
-        self.assertEqual(ResultPresenter.get_candidate_sort_score({"score": 85.5}), 85.5)
-        self.assertEqual(ResultPresenter.get_candidate_sort_score({"score": "92.0"}), 92.0)
-        self.assertEqual(ResultPresenter.get_candidate_sort_score({"score": None}), -1.0)
-        self.assertEqual(ResultPresenter.get_candidate_sort_score({}), -1.0)
+        # Multi-set CRUD
+        rs1 = bridge.create_rule_set(cid, "Backend", [{"text": "Python skill", "priority": "must"}])
+        rs2 = bridge.create_rule_set(cid, "Data", [{"text": "SQL queries", "priority": "important"}])
+        self.assertEqual(bridge.get_active_rule_set(cid)["rule_set_id"], rs2["rule_set_id"])
+        bridge.set_active_rule_set(cid, rs1["rule_set_id"])
+        self.assertEqual(bridge.get_active_rule_set(cid)["set_name"], "Backend")
 
-    def test_get_candidate_sort_score_object(self):
-        class DummyCand:
-            def __init__(self, score):
-                self.score = score
+        updated = bridge.update_rule_set(cid, rs1["rule_set_id"], set_name="Backend Eng")
+        self.assertEqual(updated["set_name"], "Backend Eng")
 
-        self.assertEqual(ResultPresenter.get_candidate_sort_score(DummyCand(77.0)), 77.0)
-        self.assertEqual(ResultPresenter.get_candidate_sort_score(DummyCand(None)), -1.0)
+        # Results scoped per rule set
+        bridge.save_screening_results(
+            cid,
+            [{"file": "alice.pdf", "score": 92.0}],
+            {"totals": {"processed": 1}},
+            business_rules_id=rs1["rule_set_id"],
+        )
+        r_set1, s_set1 = bridge.get_screening_results(cid, business_rules_id=rs1["rule_set_id"])
+        r_set2, s_set2 = bridge.get_screening_results(cid, business_rules_id=rs2["rule_set_id"])
+        self.assertEqual(len(r_set1), 1)
+        self.assertIsNotNone(s_set1)
+        self.assertEqual(r_set2, [])
+        self.assertIsNone(s_set2)
 
-    def test_display_screening_results_sorts_descending(self):
-        candidates = [
-            {"name": "Alice", "file": "alice.pdf", "score": 60.0, "reason": "OK"},
-            {"name": "Bob", "file": "bob.pdf", "score": 95.0, "reason": "Great"},
-            {"name": "Charlie", "file": "charlie.pdf", "score": 80.0, "reason": "Good"},
-        ]
-        with patch("sys.stdout", new=io.StringIO()):
-            sorted_res = self.presenter.display_screening_results(candidates, top_n=3)
+        self.assertTrue(bridge.delete_rule_set(cid, rs1["rule_set_id"]))
+        self.assertEqual(len(bridge.list_rule_sets(cid)), 1)
 
-        self.assertEqual(len(sorted_res), 3)
-        self.assertEqual(sorted_res[0]["name"], "Bob")
-        self.assertEqual(sorted_res[1]["name"], "Charlie")
-        self.assertEqual(sorted_res[2]["name"], "Alice")
+    def test_cloud_delegation_forwards_to_data_manager(self):
+        mock_dm = MagicMock()
+        mock_dm.CLOUD_READY = True
+        mock_dm.list_company_resumes.return_value = [{"file_name": "cv.pdf", "status": "valid"}]
+        bridge = TelegramDataBridge(data_manager=mock_dm, use_cloud=True)
 
-    def test_display_screening_results_caps_top_n(self):
-        candidates = [
-            {"name": f"Cand {i}", "file": f"c{i}.pdf", "score": float(i * 10)}
-            for i in range(1, 6)
-        ]
-        with patch("sys.stdout", new=io.StringIO()):
-            sorted_res = self.presenter.display_screening_results(candidates, top_n=2)
-
-        self.assertEqual(len(sorted_res), 2)
-        self.assertEqual(sorted_res[0]["score"], 50.0)
-        self.assertEqual(sorted_res[1]["score"], 40.0)
-
-    def test_display_candidate_full_details_handles_sparse_candidate(self):
-        sparse_cand = {"name": "Jordan", "file": "jordan.pdf"}
-        with patch("sys.stdout", new=io.StringIO()) as fake_out:
-            self.presenter.display_candidate_full_details(sparse_cand, rank=1)
-            output = fake_out.getvalue()
-
-        self.assertIn("Jordan", output)
-        self.assertIn("jordan.pdf", output)
-        self.assertIn("None listed", output)
-
-    def test_display_summary_report_renders_sections(self):
-        summary_path = os.path.join(self.test_dir, "summary.json")
-        sample_report = {
-            "totals": {"processed": 4, "scored": 3, "rejected": 1, "invalid": 0},
-            "score_statistics": {"average": 82.5, "median": 85.0, "highest": 95.0, "lowest": 70.0},
-            "rule_statistics": [
-                {"rule": "Python experience", "priority": "must", "met": 3, "missed": 1, "percent_met": 75.0}
-            ],
-            "top_candidates": [
-                {"rank": 1, "name": "Bob", "file": "bob.pdf", "score": 95.0, "rules_met": ["Python experience"]}
-            ],
-            "overall_summary": "Strong candidate pool with high Python proficiency.",
-        }
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(sample_report, f)
-
-        with patch("sys.stdout", new=io.StringIO()) as fake_out:
-            self.presenter.display_summary_report(summary_file=summary_path)
-            output = fake_out.getvalue()
-
-        self.assertIn("AI SCREENING SUMMARY REPORT", output)
-        self.assertIn("Strong candidate pool", output)
-        self.assertIn("Total Resumes Evaluated : 4", output)
-        self.assertIn("Average: 82.5%", output)
-        self.assertIn("Bob (Score: 95.0%)", output)
-        self.assertIn("Python experience", output)
-
-
-class TestRuleInputHandler(unittest.TestCase):
-    """Verifies adding, viewing, and clearing business rules."""
-
-    def setUp(self):
-        self.handler = RuleInputHandler(InputValidator())
-
-    @patch("builtins.input", side_effect=["5"])
-    def test_manage_business_rules_exit_without_modifications(self, mock_input):
-        rules = [{"text": "Knows Python", "priority": "must"}]
-        with patch("sys.stdout", new=io.StringIO()):
-            out_rules = self.handler.manage_business_rules(rules)
-        self.assertEqual(len(out_rules), 1)
-        self.assertEqual(out_rules[0]["text"], "Knows Python")
-
-    @patch("builtins.input", side_effect=["2", "Must have 3+ years in cloud computing", "1", "n", "5"])
-    def test_add_rule_successfully(self, mock_input):
-        rules = []
-        with patch("sys.stdout", new=io.StringIO()):
-            out_rules = self.handler.manage_business_rules(rules)
-        self.assertEqual(len(out_rules), 1)
-        self.assertEqual(out_rules[0]["text"], "Must have 3+ years in cloud computing")
-        self.assertEqual(out_rules[0]["priority"], "must")
-
-    @patch("builtins.input", side_effect=["3", "1", "5"])
-    def test_delete_rule_by_index(self, mock_input):
-        rules = [
-            {"text": "First rule to delete", "priority": "must"},
-            {"text": "Second rule to keep", "priority": "nice"},
-        ]
-        with patch("sys.stdout", new=io.StringIO()):
-            out_rules = self.handler.manage_business_rules(rules)
-        self.assertEqual(len(out_rules), 1)
-        self.assertEqual(out_rules[0]["text"], "Second rule to keep")
+        resumes = bridge.list_resumes(company_id=7)
+        self.assertEqual(len(resumes), 1)
+        mock_dm.list_company_resumes.assert_called_once_with(7)
 
 
 class TestTelegramFormatterAndKeyboards(unittest.TestCase):
-    """Verifies Telegram Bot card formatting and inline keyboard generation."""
+    """Verifies Telegram Bot HTML formatting and inline keyboard generation."""
 
     def test_format_dashboard_contains_company_metadata(self):
         text = TelegramFormatter.format_dashboard(
@@ -272,49 +255,19 @@ class TestTelegramFormatterAndKeyboards(unittest.TestCase):
         results_kb = TelegramKeyboards.results_menu(ranked_count=3)
         self.assertIsNotNone(results_kb.keyboard)
 
+    def test_top_n_menu_caps_presets_to_max_resumes(self):
+        kb_3 = TelegramKeyboards.top_n_menu(current_top_n=3, max_resumes=3)
+        callbacks_3 = [btn.callback_data for row in kb_3.keyboard for btn in row]
+        self.assertIn("set_topn:1", callbacks_3)
+        self.assertIn("set_topn:3", callbacks_3)
+        self.assertNotIn("set_topn:5", callbacks_3)
+        self.assertNotIn("set_topn:10", callbacks_3)
 
-class TestCLIIOManager(unittest.TestCase):
-    """Verifies that CLIIOManager implements BaseIOManager and handles company files."""
-
-    def setUp(self):
-        self.test_dir = tempfile.mkdtemp()
-        self.companies_file = os.path.join(self.test_dir, "test_companies.json")
-
-    def tearDown(self):
-        shutil.rmtree(self.test_dir, ignore_errors=True)
-
-    def test_cli_io_manager_implements_base_interface(self):
-        self.assertTrue(issubclass(CLIIOManager, BaseIOManager))
-        cli = CLIIOManager(data_file=self.companies_file)
-        self.assertIsInstance(cli, BaseIOManager)
-
-    def test_display_methods_run_without_errors(self):
-        cli = CLIIOManager(data_file=self.companies_file)
-        with patch("sys.stdout", new=io.StringIO()):
-            cli.display_message("Test message")
-            cli.display_error("Test error")
-            cli.display_success("Test success")
-            res = cli.display_screening_results([{"file": "test.pdf", "score": 80.0}])
-            self.assertEqual(len(res), 1)
-
-    def test_load_and_save_companies_assigns_ids(self):
-        initial_data = {
-            "Old Company": {
-                "owner": 12345,
-                "invite_code": "OLD-1234",
-                "passcode_hash": "hash123",
-                "members": [12345],
-            }
-        }
-        with open(self.companies_file, "w", encoding="utf-8") as f:
-            json.dump(initial_data, f)
-
-        cli = CLIIOManager(data_file=self.companies_file)
-        companies = cli._load_companies()
-
-        self.assertIn("Old Company", companies)
-        self.assertIn("company_id", companies["Old Company"])
-        self.assertEqual(companies["Old Company"]["company_id"], 101)
+        kb_2 = TelegramKeyboards.top_n_menu(current_top_n=2, max_resumes=2)
+        callbacks_2 = [btn.callback_data for row in kb_2.keyboard for btn in row]
+        self.assertIn("set_topn:1", callbacks_2)
+        self.assertIn("set_topn:2", callbacks_2)
+        self.assertNotIn("set_topn:3", callbacks_2)
 
 
 if __name__ == "__main__":

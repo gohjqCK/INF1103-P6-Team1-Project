@@ -1,14 +1,12 @@
 """
-main.py - INF1103 RESUM-AI Server & Pipeline Coordinator
-Default mode: Runs the Telegram Bot Server Console in the foreground (users interact solely via Telegram).
-Legacy mode: Pass '--cli' (python main.py --cli) to run the interactive terminal CLI.
+main.py - RESUM-AI Server & Pipeline Coordinator
+Runs the Telegram Bot Server Console in the foreground (users interact solely via Telegram).
 """
 
 import inspect
 import json
 import os
 import sys
-import threading
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -22,8 +20,7 @@ try:
 except ImportError:
     pass
 
-# Import I/O Manager Modules
-from io_manager_modules.io_manager_cli import CLIIOManager
+# Import I/O Manager Module
 from io_manager_modules.io_manager_telegram import TelegramIOManager
 
 # Safe imports for team managers
@@ -333,65 +330,8 @@ def run_telegram_server() -> None:
     telegram_io.start()
 
 
-def run_legacy_cli() -> None:
-    """Runs the legacy interactive terminal CLI (--cli flag) with optional background Telegram bot."""
-    print("=" * 65)
-    print("              INF1103 Team 1 - RESUM-AI (CLI MODE)          ")
-    print("=" * 65)
-
-    bot_token = _resolve_bot_token()
-    data_mgr = DataManager() if _DATA_MANAGER_AVAILABLE else None
-    cloud_ready = bool(getattr(data_mgr, "CLOUD_READY", False)) if data_mgr else False
-
-    if bot_token:
-        try:
-            telegram_io = TelegramIOManager(
-                token=bot_token,
-                data_manager=data_mgr,
-                pipeline_runner=execute_screening_pipeline,
-                use_cloud=cloud_ready,
-            )
-            bot_thread = threading.Thread(
-                target=telegram_io.start,
-                name="TelegramBotDaemonThread",
-                daemon=True,
-            )
-            bot_thread.start()
-        except Exception as err:
-            print(f"  [!] Could not start background Telegram Bot: {err}")
-
-    cli_io = CLIIOManager(data_manager=data_mgr)
-    config = cli_io.get_employer_inputs()
-    rerun = False
-
-    while True:
-        if rerun:
-            input("\nScreening complete. Press [Enter] to return to menu...")
-            config = cli_io.get_employer_inputs(config)
-
-        pipeline_output = execute_screening_pipeline(config)
-        ranked_candidates = pipeline_output.get("ranked_candidates", [])
-
-        if not ranked_candidates:
-            cli_io.display_error("No candidates were successfully evaluated.")
-        else:
-            cli_io.display_success("Resumes successfully screened!")
-            cli_io.display_screening_results(ranked_candidates, top_n=config.get("top_n", 3))
-
-            if os.path.exists("summary.json"):
-                print("\n  [*] Tip: AI Summary Report is saved to 'summary.json'.")
-                view_sum = input("  Would you like to view the AI Summary Report now? (y/n) [Default: y]: ").strip().lower()
-                if view_sum in ("", "y", "yes"):
-                    cli_io.view_summary_report("summary.json")
-
-        rerun = True
-
-
 def main():
-    if "--cli" in sys.argv:
-        run_legacy_cli()
-    else:
-        run_telegram_server()
+    run_telegram_server()
 
 
 if __name__ == "__main__":
