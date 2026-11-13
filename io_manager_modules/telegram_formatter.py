@@ -2,13 +2,22 @@ import html
 from typing import Any, Dict, List, Optional
 
 
+PRIORITY_WEIGHTS: Dict[str, int] = {
+    "must": 4,
+    "important": 3,
+    "nice": 2,
+    "can consider": 1,
+    "reject": 0,
+}
+
+
 def _esc(value: Any) -> str:
     """Escapes text safely for Telegram HTML parse mode."""
     return html.escape(str(value if value is not None else ""))
 
 
 class TelegramFormatter:
-    """Formats dashboard, rules, resumes, candidate cards, profile details, and AI Summary reports for Telegram."""
+    """Formats dashboard, rule sets, resumes, candidate cards, profile details, and AI Summary reports for Telegram."""
 
     @staticmethod
     def format_dashboard(
@@ -19,28 +28,60 @@ class TelegramFormatter:
         rule_count: int = 0,
         top_n: int = 3,
         has_results: bool = False,
+        active_set_name: Optional[str] = None,
     ) -> str:
         status_text = "✅ Results Available" if has_results else "⏳ Not Run Yet"
+        set_line = (
+            f"📂 <b>Active Rule Set:</b> {_esc(active_set_name)} ({rule_count} rule(s))"
+            if active_set_name
+            else "📂 <b>Active Rule Set:</b> <i>None created yet</i>"
+        )
         return (
             f"🏢 <b>Company Folder:</b> {_esc(company_name)} <code>(ID: #{company_id})</code>\n"
             f"🔑 <b>Team Invite Code:</b> <code>{_esc(invite_code)}</code>\n\n"
-            f"📋 <b>Business Rules:</b> {rule_count} rule(s)\n"
+            f"{set_line}\n"
             f"📁 <b>Uploaded Resumes:</b> {resume_count} PDF(s)\n"
             f"🎯 <b>Shortlist Limit:</b> Top {top_n}\n"
             f"📊 <b>Screening Status:</b> {status_text}\n\n"
             f"📤 <b>Upload Resumes Anytime:</b>\n"
             f"Drag & drop or attach any <b>.pdf</b> resume directly into this chat to add it to your company.\n\n"
-            f"<i>Use the buttons below to configure rules, manage resumes, and run AI screening!</i>"
+            f"<i>Use the buttons below to manage rule sets, upload resumes, and run AI screening!</i>"
         )
 
     @staticmethod
-    def format_rules_list(company_name: str, rules: List[Dict[str, Any]]) -> str:
-        header = f"📋 <b>BUSINESS RULES ({_esc(company_name)}) — {len(rules)} Rule(s)</b>\n"
+    def format_rules_list(
+        company_name: str,
+        active_set: Optional[Dict[str, Any]],
+        all_sets: List[Dict[str, Any]],
+    ) -> str:
+        if not active_set:
+            return (
+                f"📋 <b>BUSINESS RULE SETS ({_esc(company_name)})</b>\n\n"
+                f"<i>No business rule sets created yet.</i>\n\n"
+                f"Create a named set for each role (e.g. <code>Finance</code>, <code>Cleaners</code>) "
+                f"to begin adding weighted screening criteria."
+            )
+
+        set_name = str(active_set.get("set_name", "Default"))
+        set_id = active_set.get("rule_set_id", "N/A")
+        rules = active_set.get("rules") or []
+
+        sets_summary = ", ".join(
+            f"<b>{_esc(rs.get('set_name'))}</b>" if rs.get("rule_set_id") == set_id else _esc(rs.get("set_name"))
+            for rs in all_sets
+        ) or _esc(set_name)
+
+        header = (
+            f"📋 <b>BUSINESS RULES — {_esc(company_name)}</b>\n"
+            f"📂 <b>Active Set:</b> {_esc(set_name)} <code>(ID: #{set_id})</code>\n"
+            f"🗂 <b>Company Sets ({len(all_sets)}):</b> {sets_summary}\n"
+        )
+
         if not rules:
             return (
                 f"{header}\n"
-                f"<i>No business rules configured yet.</i>\n\n"
-                f"Tap <b>➕ Add New Rule</b> below to define your screening criteria."
+                f"<i>This rule set has no rules yet.</i>\n\n"
+                f"Tap <b>➕ Append New Rule to Set</b> below to add criteria."
             )
 
         badge_map = {
@@ -53,9 +94,10 @@ class TelegramFormatter:
         lines = [header]
         for idx, rule in enumerate(rules, start=1):
             prio_raw = str(rule.get("priority", "reject")).lower()
+            weight = rule.get("weight", PRIORITY_WEIGHTS.get(prio_raw, 0))
             badge = badge_map.get(prio_raw, f"[{_esc(prio_raw.upper())}]")
             text = _esc(rule.get("text", "<unspecified>"))
-            lines.append(f"{idx}. <b>{badge}</b> — {text}")
+            lines.append(f"{idx}. <b>{badge} (Weight: {weight})</b> — {text}")
         return "\n".join(lines)
 
     @staticmethod
@@ -83,8 +125,13 @@ class TelegramFormatter:
         return "\n".join(lines)
 
     @staticmethod
-    def format_results_overview(company_name: str, ranked: List[Dict[str, Any]]) -> str:
-        lines = [f"🏆 <b>SCREENING RESULTS ({_esc(company_name)}) — {len(ranked)} Candidate(s)</b>\n"]
+    def format_results_overview(
+        company_name: str,
+        ranked: List[Dict[str, Any]],
+        rule_set_name: Optional[str] = None,
+    ) -> str:
+        scope = f"{_esc(company_name)} | {_esc(rule_set_name)}" if rule_set_name else _esc(company_name)
+        lines = [f"🏆 <b>SCREENING RESULTS ({scope}) — {len(ranked)} Candidate(s)</b>\n"]
         for idx, cand in enumerate(ranked, start=1):
             name = _esc(cand.get("name") or cand.get("file") or f"Candidate #{idx}")
             score = cand.get("score")
@@ -121,7 +168,11 @@ class TelegramFormatter:
         )
 
     @staticmethod
-    def format_ai_summary_json(company_name: str, summary_data: Dict[str, Any]) -> str:
+    def format_ai_summary_json(
+        company_name: str,
+        summary_data: Dict[str, Any],
+        rule_set_name: Optional[str] = None,
+    ) -> str:
         """Formats the structured summary dictionary generated by AIManager.create_summary()."""
         totals = summary_data.get("totals", {})
         scores = summary_data.get("score_statistics") or summary_data.get("scores", {})
@@ -131,7 +182,8 @@ class TelegramFormatter:
 
         rule_lines = []
         for idx, r in enumerate(rules, 1):
-            prio = _esc(str(r.get("priority", "rule")).upper())
+            prio = str(r.get("priority", "rule")).lower()
+            weight = r.get("weight", PRIORITY_WEIGHTS.get(prio, 0))
             text = _esc(r.get("rule") or r.get("text", ""))
             met = r.get("met") if "met" in r else r.get("met_count", 0)
             if "missed" in r:
@@ -141,7 +193,7 @@ class TelegramFormatter:
             rate = r.get("percent_met") if "percent_met" in r else r.get("met_rate", 0.0)
             checked_str = f"/{checked}" if checked else ""
             rule_lines.append(
-                f"{idx}. <b>[{prio}]</b> {text}\n"
+                f"{idx}. <b>[{_esc(prio.upper())} | W:{weight}]</b> {text}\n"
                 f"   ✅ Met: <b>{met}{checked_str}</b> ({float(rate):.1f}%)"
             )
         rules_section = "\n".join(rule_lines) if rule_lines else "<i>No rules recorded in summary.</i>"
@@ -165,9 +217,10 @@ class TelegramFormatter:
         low_str = f"{float(low_score):.1f}%" if low_score is not None else "N/A"
 
         total_resumes = totals.get("processed", totals.get("resumes", 0))
+        scope = f"{_esc(company_name)} | {_esc(rule_set_name)}" if rule_set_name else _esc(company_name)
 
         return (
-            f"📈 <b>RESUM-AI SUMMARY REPORT ({_esc(company_name)})</b>\n\n"
+            f"📈 <b>RESUM-AI SUMMARY REPORT ({scope})</b>\n\n"
             f"<b>1. Executive AI Narrative:</b>\n"
             f"<i>{overall_summary}</i>\n\n"
             f"<b>2. Applicant Pool Breakdown:</b>\n"
@@ -191,10 +244,15 @@ class TelegramFormatter:
         rules: List[Dict[str, Any]],
         candidates: List[Dict[str, Any]],
         summary_data: Optional[Dict[str, Any]] = None,
+        rule_set_name: Optional[str] = None,
     ) -> str:
         """Formats summary report using structured summary data if available, or computes from candidates list."""
         if summary_data and isinstance(summary_data, dict) and "totals" in summary_data:
-            return TelegramFormatter.format_ai_summary_json(company_name, summary_data)
+            return TelegramFormatter.format_ai_summary_json(
+                company_name,
+                summary_data,
+                rule_set_name=rule_set_name,
+            )
 
         total = len(candidates)
         accepted = [c for c in candidates if (c.get("score") or 0) > 0]
@@ -209,6 +267,8 @@ class TelegramFormatter:
         rule_lines = []
         for idx, rule in enumerate(rules, 1):
             r_text = str(rule.get("text", ""))
+            prio = str(rule.get("priority", "reject")).lower()
+            weight = rule.get("weight", PRIORITY_WEIGHTS.get(prio, 0))
             matches = [
                 str(c.get("name") or c.get("file") or "Candidate")
                 for c in accepted
@@ -216,16 +276,16 @@ class TelegramFormatter:
             ]
             pct = round((len(matches) / total * 100), 1) if total > 0 else 0.0
             match_str = f" ({_esc(', '.join(matches))})" if matches else ""
-            prio = _esc(str(rule.get("priority", "reject")).upper())
             rule_lines.append(
-                f"{idx}. <b>[{prio}]</b> {_esc(r_text)}\n"
+                f"{idx}. <b>[{_esc(prio.upper())} | W:{weight}]</b> {_esc(r_text)}\n"
                 f"   ✅ Matched: <b>{len(matches)}/{total}</b> applicants ({pct}%){match_str}"
             )
 
         rules_section = "\n".join(rule_lines) if rule_lines else "<i>No rules configured.</i>"
+        scope = f"{_esc(company_name)} | {_esc(rule_set_name)}" if rule_set_name else _esc(company_name)
 
         return (
-            f"📈 <b>RESUM-AI SUMMARY OVERVIEW ({_esc(company_name)})</b>\n\n"
+            f"📈 <b>RESUM-AI SUMMARY OVERVIEW ({scope})</b>\n\n"
             f"<b>1. Applicant Pool Breakdown:</b>\n"
             f"• Total Evaluated: <b>{total}</b>\n"
             f"• Qualifying / Accepted: <b>{len(accepted)}</b>\n"

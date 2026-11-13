@@ -1,5 +1,13 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+PRIORITY_WEIGHTS: Dict[str, int] = {
+    "must": 4,
+    "important": 3,
+    "nice": 2,
+    "can consider": 1,
+    "reject": 0,
+}
 
 
 class TelegramKeyboards:
@@ -19,11 +27,17 @@ class TelegramKeyboards:
         rule_count: int = 0,
         resume_count: int = 0,
         top_n: int = 3,
+        active_set_name: Optional[str] = None,
     ) -> InlineKeyboardMarkup:
-        """Full Telegram dashboard: Rules, Resumes, Top-N, Screening, Results, Summary, Switch."""
+        """Full Telegram dashboard: Rule Sets, Resumes, Top-N, Screening, Results, Summary, Switch."""
+        rules_label = (
+            f"📋 Business Rules [{active_set_name}: {rule_count}]"
+            if active_set_name
+            else "📋 Manage Business Rule Sets (0)"
+        )
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(
-            InlineKeyboardButton(f"📋 Manage Business Rules ({rule_count})", callback_data="menu_rules"),
+            InlineKeyboardButton(rules_label, callback_data="menu_rules"),
             InlineKeyboardButton(f"📁 Manage Resumes ({resume_count})", callback_data="menu_resumes"),
             InlineKeyboardButton(f"🎯 Candidate Shortlist Limit (Top {top_n})", callback_data="menu_topn"),
             InlineKeyboardButton("🚀 Run AI Resume Screening", callback_data="menu_screen"),
@@ -34,15 +48,51 @@ class TelegramKeyboards:
         return kb
 
     @staticmethod
-    def rules_menu(has_rules: bool = True) -> InlineKeyboardMarkup:
+    def rules_menu(
+        has_active_set: bool = False,
+        has_rules: bool = False,
+        set_count: int = 0,
+    ) -> InlineKeyboardMarkup:
         kb = InlineKeyboardMarkup(row_width=1)
-        kb.add(InlineKeyboardButton("➕ Add New Rule", callback_data="rule_add"))
-        if has_rules:
+        if has_active_set:
+            kb.add(InlineKeyboardButton("➕ Append New Rule to Set", callback_data="rule_add"))
+            if has_rules:
+                kb.add(
+                    InlineKeyboardButton("✏️ Update / Edit a Rule", callback_data="rule_edit_menu"),
+                    InlineKeyboardButton("🗑 Delete a Rule", callback_data="rule_del_menu"),
+                    InlineKeyboardButton("🧹 Clear Rules in This Set", callback_data="rule_clear"),
+                )
             kb.add(
-                InlineKeyboardButton("🗑 Delete a Rule", callback_data="rule_del_menu"),
-                InlineKeyboardButton("🧹 Clear All Rules", callback_data="rule_clear"),
+                InlineKeyboardButton(f"🔀 Swap Active Rule Set ({set_count})", callback_data="ruleset_select_menu"),
+                InlineKeyboardButton("🆕 Create New Rule Set", callback_data="ruleset_create"),
+                InlineKeyboardButton("✏️ Rename This Rule Set", callback_data="ruleset_rename"),
+                InlineKeyboardButton("🗑 Delete This Rule Set", callback_data="ruleset_delete"),
             )
+        else:
+            kb.add(InlineKeyboardButton("🆕 Create First Rule Set", callback_data="ruleset_create"))
+
         kb.add(InlineKeyboardButton("⬅️ Back to Dashboard", callback_data="menu_main"))
+        return kb
+
+    @staticmethod
+    def rule_sets_selection_menu(
+        rule_sets: List[Dict[str, Any]],
+        active_set_id: Optional[int] = None,
+    ) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup(row_width=1)
+        for rs in rule_sets:
+            rs_id = rs.get("rule_set_id")
+            rs_name = str(rs.get("set_name", "Untitled Set"))
+            count = len(rs.get("rules") or [])
+            prefix = "✅ " if rs_id == active_set_id else "📂 "
+            kb.add(
+                InlineKeyboardButton(
+                    f"{prefix}{rs_name} ({count} rule{'s' if count != 1 else ''})",
+                    callback_data=f"ruleset_pick:{rs_id}",
+                )
+            )
+        kb.add(InlineKeyboardButton("🆕 Create New Rule Set", callback_data="ruleset_create"))
+        kb.add(InlineKeyboardButton("⬅️ Back to Rules Menu", callback_data="menu_rules"))
         return kb
 
     @staticmethod
@@ -53,8 +103,48 @@ class TelegramKeyboards:
             InlineKeyboardButton("🟠 Important (Weight: 3)", callback_data="rule_prio:important"),
             InlineKeyboardButton("🟢 Nice to Have (Weight: 2)", callback_data="rule_prio:nice"),
             InlineKeyboardButton("🔵 Can Consider (Weight: 1)", callback_data="rule_prio:can consider"),
-            InlineKeyboardButton("⛔ Reject / Dealbreaker (No Weight)", callback_data="rule_prio:reject"),
+            InlineKeyboardButton("⛔ Reject / Dealbreaker (Weight: 0)", callback_data="rule_prio:reject"),
             InlineKeyboardButton("❌ Cancel", callback_data="menu_rules"),
+        )
+        return kb
+
+    @staticmethod
+    def edit_rules_menu(rules: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup(row_width=1)
+        for idx, rule in enumerate(rules, start=1):
+            prio = str(rule.get("priority", "reject")).lower()
+            weight = rule.get("weight", PRIORITY_WEIGHTS.get(prio, 0))
+            text = str(rule.get("text", ""))
+            short_text = text[:24] + ("..." if len(text) > 24 else "")
+            kb.add(
+                InlineKeyboardButton(
+                    f"✏️ #{idx} [{prio.upper()} | W:{weight}] {short_text}",
+                    callback_data=f"rule_edit_pick:{idx}",
+                )
+            )
+        kb.add(InlineKeyboardButton("⬅️ Back to Rules Menu", callback_data="menu_rules"))
+        return kb
+
+    @staticmethod
+    def edit_rule_action_menu(idx: int) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            InlineKeyboardButton("✏️ Edit Rule Text", callback_data=f"rule_edit_text:{idx}"),
+            InlineKeyboardButton("⚖️ Change Priority / Weight", callback_data=f"rule_edit_prio:{idx}"),
+            InlineKeyboardButton("⬅️ Back to Rules Menu", callback_data="menu_rules"),
+        )
+        return kb
+
+    @staticmethod
+    def edit_rule_priority_menu(idx: int) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(
+            InlineKeyboardButton("🔴 Must Have (Weight: 4)", callback_data=f"rule_set_prio:{idx}:must"),
+            InlineKeyboardButton("🟠 Important (Weight: 3)", callback_data=f"rule_set_prio:{idx}:important"),
+            InlineKeyboardButton("🟢 Nice to Have (Weight: 2)", callback_data=f"rule_set_prio:{idx}:nice"),
+            InlineKeyboardButton("🔵 Can Consider (Weight: 1)", callback_data=f"rule_set_prio:{idx}:can consider"),
+            InlineKeyboardButton("⛔ Reject / Dealbreaker (Weight: 0)", callback_data=f"rule_set_prio:{idx}:reject"),
+            InlineKeyboardButton("⬅️ Cancel", callback_data="menu_rules"),
         )
         return kb
 
@@ -62,16 +152,17 @@ class TelegramKeyboards:
     def delete_rules_menu(rules: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
         kb = InlineKeyboardMarkup(row_width=1)
         for idx, rule in enumerate(rules, start=1):
-            prio = str(rule.get("priority", "reject")).upper()
+            prio = str(rule.get("priority", "reject")).lower()
+            weight = rule.get("weight", PRIORITY_WEIGHTS.get(prio, 0))
             text = str(rule.get("text", ""))
-            short_text = text[:28] + ("..." if len(text) > 28 else "")
+            short_text = text[:24] + ("..." if len(text) > 24 else "")
             kb.add(
                 InlineKeyboardButton(
-                    f"🗑 #{idx} [{prio}] {short_text}",
+                    f"🗑 #{idx} [{prio.upper()} | W:{weight}] {short_text}",
                     callback_data=f"rule_del:{idx}",
                 )
             )
-        kb.add(InlineKeyboardButton("⬅️ Back to Rules", callback_data="menu_rules"))
+        kb.add(InlineKeyboardButton("⬅️ Back to Rules Menu", callback_data="menu_rules"))
         return kb
 
     @staticmethod

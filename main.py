@@ -79,7 +79,34 @@ def execute_screening_pipeline(
 
     company_name = employer_inputs.get("company_name", "General")
     company_id = employer_inputs.get("company_id")
-    rules = employer_inputs.get("business_rules", [])
+    business_rules_id = employer_inputs.get("business_rules_id")
+    rule_set_name = employer_inputs.get("rule_set_name") or "Default"
+    raw_rules = employer_inputs.get("business_rules", [])
+
+    # Validate & normalize every rule's priority and weight before Stage 1 & Stage 3
+    priority_weights = {
+        "must": 4,
+        "important": 3,
+        "nice": 2,
+        "can consider": 1,
+        "reject": 0,
+    }
+    rules: List[Dict[str, Any]] = []
+    for r in raw_rules:
+        if not isinstance(r, dict):
+            continue
+        text = str(r.get("text", "")).strip()
+        if not text:
+            continue
+        prio = str(r.get("priority", "important")).strip().lower()
+        if prio not in priority_weights:
+            raise ValueError(f"Invalid rule priority '{prio}' for rule '{text}'.")
+        normalized_rule = dict(r)
+        normalized_rule["text"] = text
+        normalized_rule["priority"] = prio
+        normalized_rule["weight"] = priority_weights[prio]
+        rules.append(normalized_rule)
+
     pdf_directory = employer_inputs.get("pdf_directory", "resumes")
     top_n = employer_inputs.get("top_n", 3)
     out_dir = Path(employer_inputs.get("output_directory", "output"))
@@ -88,7 +115,10 @@ def execute_screening_pipeline(
     data_mgr = DataManager() if _DATA_MANAGER_AVAILABLE else None
     cloud_ready = bool(getattr(data_mgr, "CLOUD_READY", False)) if data_mgr else False
 
-    print(f"\n[Pipeline] Starting screening run for '{company_name}' (ID: #{company_id}) with {len(rules)} rule(s)...")
+    print(
+        f"\n[Pipeline] Starting screening run for '{company_name}' (ID: #{company_id}), "
+        f"set='{rule_set_name}' (#{business_rules_id}) with {len(rules)} rule(s)..."
+    )
 
     # -------------------------------------------------------------------------
     # Stage 1: Generate AI Prompt / Keywords from Rules
