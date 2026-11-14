@@ -9,17 +9,17 @@ class OverallList:
     
 
     @property
-    def get_accepted_list(self):
+    def get_accepted_list(self)->list:
         return self.acceptedList
     
     @property
-    def get_rejected_list(self):
+    def get_rejected_list(self)->list:
         return self.rejectedList
     @property
-    def get_invalid_list(self):
+    def get_invalid_list(self)->list:
         return self.invalidList
     
-    def add(self, resume, category: str):
+    def add(self, resume, category: str)-> None:
         """Responsible ONLY for data management."""
         if category == "invalid":
             self.invalidList.list=resume
