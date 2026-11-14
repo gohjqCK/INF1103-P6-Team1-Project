@@ -1,4 +1,52 @@
 ========================================================================
+ PHASE 2 QUICK-START: DOCKER COMMANDS (TELEGRAM + SUPABASE + OLLAMA)
+========================================================================
+
+1. FIRST-TIME SETUP (Code + .env)
+   git checkout main
+   git pull origin main
+   copy .env.example .env
+
+   Open .env and fill in:
+     TELEGRAM_BOT_TOKEN=...
+     SUPABASE_URL=...
+     SUPABASE_KEY=...
+
+   Note: Only ONE person should run the bot per TELEGRAM_BOT_TOKEN at a time
+   (otherwise Telegram throws a "409 Conflict" error).
+
+2. START OLLAMA (AI Server)
+   Note: If the Ollama desktop app is open in your system tray, either Quit
+   it first so Docker can bind port 11434, OR skip this step to use the
+   desktop app directly.
+
+   - CPU-only (no NVIDIA GPU):
+     docker compose up -d
+   - NVIDIA GPU (much faster):
+     docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+   - Download the AI model (first time only, ~4.7 GB):
+     docker compose exec ollama ollama pull qwen2.5:7b
+   - Verify the model is installed:
+     docker compose exec ollama ollama list
+
+3. BUILD & RUN THE TELEGRAM BOT (PowerShell in project folder)
+   - Build image (first time, and after any git pull / code change):
+     docker build -t resume-cli .
+   - Run Telegram Bot (Windows PowerShell):
+     docker run -it --rm --dns 8.8.8.8 --add-host=host.docker.internal:host-gateway --env-file .env -v "${PWD}:/work" resume-cli
+   - Run Telegram Bot (macOS / Linux Bash/Zsh):
+     docker run -it --rm --dns 8.8.8.8 --add-host=host.docker.internal:host-gateway --env-file .env -v "$(pwd):/work" resume-cli
+
+4. CHECKS, TESTS & STOPPING
+   - Check Ollama CPU/GPU status:
+     docker compose exec ollama ollama ps
+     docker stats --no-stream ollama
+   - Run unit tests inside Docker:
+     docker run --rm --entrypoint python -e PYTHONPATH=/app -v "${PWD}:/work" resume-cli -m unittest discover tests -v
+   - Stop the Telegram Bot:  Press Ctrl + C
+   - Stop Ollama:            docker compose down
+
+========================================================================
  TEAMMATE SETUP GUIDE (DOCKER)
 ========================================================================
 
