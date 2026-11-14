@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from io_manager_modules import (
     PRIORITY_WEIGHTS,
     BaseIOManager,
+    BridgeStorageError,
     TelegramDataBridge,
     TelegramFormatter,
     TelegramIOManager,
@@ -268,6 +269,233 @@ class TestTelegramFormatterAndKeyboards(unittest.TestCase):
         self.assertIn("set_topn:1", callbacks_2)
         self.assertIn("set_topn:2", callbacks_2)
         self.assertNotIn("set_topn:3", callbacks_2)
+
+
+class _FakeTeleBot:
+    """Minimal fake TeleBot capturing handlers and API calls for offline error-handling tests."""
+
+    def __init__(self, token: str, parse_mode: str = "HTML"):
+        self.token = token
+        self.parse_mode = parse_mode
+        self.callback_handler = None
+        self.document_handler = None
+        self.sent_messages = []
+        self.replies = []
+        self.edited_messages = []
+        self.send_message_side_effect = None
+        self.answer_callback_side_effect = None
+        self.get_file_side_effect = None
+        self.send_document_side_effect = None
+        self.infinity_polling_side_effect = None
+
+    def message_handler(self, commands=None, content_types=None):
+        def decorator(fn):
+            if content_types and "document" in content_types:
+                self.document_handler = fn
+            return fn
+
+        return decorator
+
+    def callback_query_handler(self, func=None):
+        def decorator(fn):
+            self.callback_handler = fn
+            return fn
+
+        return decorator
+
+    def send_message(self, chat_id, text, **kwargs):
+        if self.send_message_side_effect is not None:
+            effect = self.send_message_side_effect
+            if callable(effect):
+                effect(chat_id, text, **kwargs)
+            else:
+                raise effect
+        self.sent_messages.append((chat_id, text, kwargs))
+        return MagicMock(message_id=len(self.sent_messages))
+
+    def reply_to(self, message, text, **kwargs):
+        self.replies.append((message, text, kwargs))
+        return MagicMock(message_id=100 + len(self.replies))
+
+    def edit_message_text(self, text, chat_id=None, message_id=None, **kwargs):
+        self.edited_messages.append((chat_id, message_id, text, kwargs))
+
+    def answer_callback_query(self, call_id):
+        if self.answer_callback_side_effect is not None:
+            raise self.answer_callback_side_effect
+
+    def get_file(self, file_id):
+        if self.get_file_side_effect is not None:
+            raise self.get_file_side_effect
+        return MagicMock(file_path="resumes/sample.pdf")
+
+    def download_file(self, file_path):
+        return b""
+
+    def send_document(self, chat_id, bio, **kwargs):
+        if self.send_document_side_effect is not None:
+            raise self.send_document_side_effect
+
+    def register_next_step_handler(self, msg, callback, *args):
+        pass
+
+    def infinity_polling(self, **kwargs):
+        if self.infinity_polling_side_effect is not None:
+            raise self.infinity_polling_side_effect
+
+
+class TestTelegramErrorHandling(unittest.TestCase):
+    """Verifies API failure, bad input, and corrupt/invalid file error handling across io_manager_modules."""
+
+    def _build_tg(self, bridge=None):
+        fake_module = MagicMock()
+        fake_module.TeleBot.side_effect = _FakeTeleBot
+        with (
+            patch("io_manager_modules.io_manager_telegram._TELEBOT_AVAILABLE", True),
+            patch("io_manager_modules.io_manager_telegram.telebot", fake_module),
+        ):
+            return TelegramIOManager(
+                token="123456:TEST_TOKEN",
+                use_cloud=False,
+                data_bridge=bridge,
+            )
+
+    def test_validator_callback_int_and_invalid_topn(self):
+        self.assertEqual(TelegramValidator.parse_callback_int("res_del:3"), 3)
+        with self.assertRaises(ValueError):
+            TelegramValidator.parse_callback_int("res_del_no_colon")
+        with self.assertRaises(ValueError):
+            TelegramValidator.parse_callback_int("res_del:not_an_int")
+        with self.assertRaises(ValueError):
+            TelegramValidator.cap_top_n("bad", 5)
+
+    def test_bridge_normalizes_cloud_failures_and_corrupt_or_empty_pdfs(self):
+        mock_dm = MagicMock()
+        mock_dm.CLOUD_READY = True
+        mock_dm.list_company_resumes.side_effect = ConnectionError("Supabase timeout")
+        mock_dm.parse_pdf_bytes.side_effect = RuntimeError("Corrupt XRef stream")
+        bridge = TelegramDataBridge(data_manager=mock_dm, use_cloud=True)
+
+        with self.assertRaises(BridgeStorageError) as ctx:
+            bridge.list_resumes(1)
+        self.assertIn("Supabase timeout", str(ctx.exception))
+
+        empty_res = bridge.parse_pdf_bytes_in_memory("empty.pdf", b"")
+        self.assertEqual(empty_res["status"], "invalid")
+        self.assertIn("empty", empty_res["reason"].lower())
+
+        corrupt_res = bridge.parse_pdf_bytes_in_memory("bad.pdf", b"%PDF-corrupt")
+        self.assertEqual(corrupt_res["status"], "invalid")
+        self.assertIn("Corrupt XRef stream", corrupt_res["reason"])
+
+    def test_send_safe_html_chunks_long_lines_and_falls_back_to_plain_text(self):
+        tg = self._build_tg()
+
+        def fail_html_only(chat_id, text, **kwargs):
+            if kwargs.get("parse_mode") is not None or "parse_mode" not in kwargs:
+                raise RuntimeError("Bad Request: can't parse entities")
+
+        tg._bot.send_message_side_effect = fail_html_only
+        long_line = "<b>" + ("A" * 4100) + "</b>"
+        with patch("sys.stdout", new=io.StringIO()):
+            tg._send_safe_html(99, long_line)
+
+        self.assertEqual(len(tg._bot.sent_messages), 2)
+        for _, sent_text, kwargs in tg._bot.sent_messages:
+            self.assertIsNone(kwargs.get("parse_mode"))
+            self.assertNotIn("<b>", sent_text)
+
+    def test_callback_handler_catches_malformed_payload_and_bridge_error(self):
+        bridge = MagicMock()
+        bridge.use_cloud = False
+        bridge.resolve_user_company.return_value = ("Acme", {"company_id": 1})
+        bridge.list_resumes.side_effect = BridgeStorageError("DB connection lost")
+        tg = self._build_tg(bridge=bridge)
+
+        bad_call = MagicMock()
+        bad_call.id = "cb1"
+        bad_call.message.chat.id = 55
+        bad_call.from_user.id = 10
+        bad_call.data = "res_del:not_a_number"
+        tg._bot.answer_callback_side_effect = RuntimeError("query is too old")
+
+        with patch("sys.stdout", new=io.StringIO()):
+            tg._bot.callback_handler(bad_call)
+            bad_call.data = "menu_resumes"
+            tg._bot.callback_handler(bad_call)
+
+        texts = [m[1] for m in tg._bot.sent_messages]
+        self.assertTrue(any("Action failed" in t and "Invalid numeric selection" in t for t in texts))
+        self.assertTrue(any("Action failed" in t and "DB connection lost" in t for t in texts))
+
+    def test_pdf_upload_rejects_oversized_and_handles_download_error(self):
+        bridge = TelegramDataBridge(use_cloud=False)
+        comp = bridge.create_company("Acme", "hash", 10, "ACME-1111")
+        tg = self._build_tg(bridge=bridge)
+        tg._session_store.set_active_company_name(10, comp["company_name"])
+
+        oversized_msg = MagicMock()
+        oversized_msg.chat.id = 55
+        oversized_msg.from_user.id = 10
+        oversized_msg.document = MagicMock(file_name="huge.pdf", file_size=21 * 1024 * 1024, file_id="f1")
+        tg._bot.document_handler(oversized_msg)
+        self.assertTrue(any("20 MB" in r[1] for r in tg._bot.replies))
+
+        fail_msg = MagicMock()
+        fail_msg.chat.id = 55
+        fail_msg.from_user.id = 10
+        fail_msg.document = MagicMock(file_name="cv.pdf", file_size=1024, file_id="f2")
+        tg._bot.get_file_side_effect = RuntimeError("Telegram network timeout")
+        with patch("sys.stdout", new=io.StringIO()):
+            tg._bot.document_handler(fail_msg)
+        self.assertTrue(any("Upload failed" in e[2] for e in tg._bot.edited_messages))
+
+    def test_step_handlers_and_candidate_pdf_handle_cloud_and_api_errors(self):
+        bridge = MagicMock()
+        bridge.use_cloud = False
+        bridge.create_rule_set.side_effect = BridgeStorageError("Cloud write failed")
+        bridge.update_rule_set.side_effect = BridgeStorageError("Cloud update failed")
+        bridge.get_company_by_invite.side_effect = BridgeStorageError("Invite query failed")
+        bridge.list_rule_sets.return_value = []
+        bridge.get_active_rule_set.return_value = {
+            "rule_set_id": 1,
+            "set_name": "Default",
+            "rules": [{"text": "Knows Python", "priority": "must", "weight": 4}],
+        }
+        bridge.set_active_rule_set.return_value = bridge.get_active_rule_set.return_value
+        bridge.get_screening_results.return_value = ([{"file": "alice.pdf", "score": 95}], None)
+        bridge.get_resume_pdf_bytes.return_value = b"%PDF-1.4"
+        bridge.list_resumes.return_value = []
+
+        tg = self._build_tg(bridge=bridge)
+        tg._bot.send_document_side_effect = RuntimeError("Upload blocked")
+
+        msg = MagicMock()
+        msg.chat.id = 55
+        msg.from_user.id = 10
+        msg.text = "Backend Team"
+
+        with patch("sys.stdout", new=io.StringIO()):
+            tg._step_create_ruleset_name(msg, "Acme", 1)
+            tg._step_rename_ruleset(msg, "Acme", 1, 1)
+            tg._step_edit_rule_text(msg, "Acme", 1, 1, 1)
+            tg._step_join_company_code(msg)
+            tg._send_candidate_pdf(55, "Acme", 1, 1)
+
+        reply_texts = [r[1] for r in tg._bot.replies]
+        sent_texts = [m[1] for m in tg._bot.sent_messages]
+        self.assertTrue(any("Could not create Rule Set" in t for t in reply_texts))
+        self.assertTrue(any("Could not rename Rule Set" in t for t in reply_texts))
+        self.assertTrue(any("Could not update rule" in t for t in reply_texts))
+        self.assertTrue(any("Invite lookup failed" in t for t in reply_texts))
+        self.assertTrue(any("not found in storage" in t for t in sent_texts))
+
+    def test_start_wraps_unexpected_polling_failure(self):
+        tg = self._build_tg()
+        tg._bot.infinity_polling_side_effect = RuntimeError("401 Unauthorized")
+        with patch("sys.stdout", new=io.StringIO()), self.assertRaises(RuntimeError) as ctx:
+            tg.start()
+        self.assertIn("Telegram polling failed", str(ctx.exception))
 
 
 if __name__ == "__main__":

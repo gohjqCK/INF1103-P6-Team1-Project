@@ -123,10 +123,26 @@ class TelegramValidator:
         return f"{prefix}-{secrets.randbelow(9000) + 1000}"
 
     @staticmethod
-    def cap_top_n(requested_n: int, resume_count: int) -> Tuple[int, bool]:
+    def cap_top_n(requested_n: Any, resume_count: int) -> Tuple[int, bool]:
         """Caps top_n to resume_count when resumes exist (>= 1). Returns (effective_n, was_capped)."""
-        val = max(1, min(int(requested_n), 100))
-        if resume_count > 0 and val > resume_count:
-            return resume_count, True
+        try:
+            parsed_n = int(requested_n)
+            parsed_count = max(0, int(resume_count or 0))
+        except (TypeError, ValueError) as err:
+            raise ValueError("Top N limit must be a valid whole number.") from err
+        val = max(1, min(parsed_n, 100))
+        if parsed_count > 0 and val > parsed_count:
+            return parsed_count, True
         return val, False
+
+    @staticmethod
+    def parse_callback_int(data: str, part_index: int = 1, sep: str = ":") -> int:
+        """Extracts and validates an integer field from a Telegram callback payload."""
+        parts = (data or "").split(sep)
+        if part_index >= len(parts):
+            raise ValueError(f"Malformed callback payload '{data}'.")
+        try:
+            return int(parts[part_index])
+        except ValueError as err:
+            raise ValueError(f"Invalid numeric selection in callback '{data}'.") from err
 

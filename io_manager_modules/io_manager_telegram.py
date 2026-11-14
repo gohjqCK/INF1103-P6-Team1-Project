@@ -10,10 +10,11 @@ from datetime import datetime, timedelta, timezone
 import html
 import io
 import os
+import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from io_manager_modules.io_manager_base import BaseIOManager
-from io_manager_modules.telegram_data_bridge import TelegramDataBridge
+from io_manager_modules.telegram_data_bridge import BridgeStorageError, TelegramDataBridge
 from io_manager_modules.telegram_formatter import TelegramFormatter
 from io_manager_modules.telegram_keyboards import TelegramKeyboards
 from io_manager_modules.telegram_session_store import TelegramSessionStore
@@ -63,6 +64,7 @@ class TelegramIOManager(BaseIOManager):
     MAX_RULE_LENGTH = TelegramValidator.MAX_RULE_LENGTH
     MIN_SET_NAME_LENGTH = TelegramValidator.MIN_SET_NAME_LENGTH
     MAX_SET_NAME_LENGTH = TelegramValidator.MAX_SET_NAME_LENGTH
+    MAX_TELEGRAM_PDF_BYTES = 20 * 1024 * 1024
     PRIORITY_WEIGHTS = dict(PRIORITY_WEIGHTS)
 
     def __init__(
@@ -188,30 +190,63 @@ class TelegramIOManager(BaseIOManager):
         text: str,
         reply_markup: Any = None,
     ) -> None:
-        if len(text) <= 4000:
-            self._bot.send_message(chat_id, text, reply_markup=reply_markup)
-            return
-
         chunks: List[str] = []
         current = ""
-        for line in text.splitlines(keepends=True):
-            if len(current) + len(line) > 3900:
+        for line in (text or "").splitlines(keepends=True):
+            if len(line) > 3900:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                for start in range(0, len(line), 3900):
+                    chunks.append(line[start : start + 3900])
+            elif len(current) + len(line) > 3900:
                 chunks.append(current)
                 current = line
             else:
                 current += line
-        if current:
+        if current or not chunks:
             chunks.append(current)
 
         for idx, chunk in enumerate(chunks):
             markup = reply_markup if idx == len(chunks) - 1 else None
-            self._bot.send_message(chat_id, chunk, reply_markup=markup)
+            try:
+                self._bot.send_message(chat_id, chunk, reply_markup=markup)
+            except Exception as err:
+                self._log_server_event("ERROR", f"Telegram HTML send failed (chat={chat_id}): {err}")
+                plain_chunk = html.unescape(re.sub(r"<[^>]+>", "", chunk))
+                try:
+                    self._bot.send_message(chat_id, plain_chunk, parse_mode=None, reply_markup=markup)
+                except Exception as fallback_err:
+                    self._log_server_event("ERROR", f"Telegram plain-text fallback failed (chat={chat_id}): {fallback_err}")
 
     def _edit_safe_html(self, chat_id: int, message_id: int, text: str) -> None:
         try:
             self._bot.edit_message_text(text, chat_id=chat_id, message_id=message_id)
         except Exception:
             pass
+
+    def _answer_callback_safe(self, call_id: str) -> None:
+        try:
+            self._bot.answer_callback_query(call_id)
+        except Exception as err:
+            self._log_server_event("ERROR", f"Callback acknowledgement failed: {err}")
+
+    def _notify_user_error(
+        self,
+        chat_id: int,
+        context: str,
+        err: Exception,
+        reply_to_message: Any = None,
+    ) -> None:
+        self._log_server_event("ERROR", f"{context}: {err}")
+        body = f"❌ <b>{html.escape(context)}:</b> {html.escape(str(err))}"
+        try:
+            if reply_to_message is not None:
+                self._bot.reply_to(reply_to_message, body)
+            else:
+                self._bot.send_message(chat_id, body)
+        except Exception as send_err:
+            self._log_server_event("ERROR", f"Failed to send error notification to chat={chat_id}: {send_err}")
 
     # -------------------------------------------------------------------------
     # UI Presentations
@@ -320,7 +355,7 @@ class TelegramIOManager(BaseIOManager):
             return True
 
         if data.startswith("ruleset_pick:"):
-            set_id = int(data.split(":", 1)[1])
+            set_id = self._validator.parse_callback_int(data)
             picked = self._bridge.set_active_rule_set(comp_id, set_id)
             if picked:
                 self._log_server_event(
@@ -430,7 +465,7 @@ class TelegramIOManager(BaseIOManager):
             return True
 
         if data.startswith("rule_edit_pick:"):
-            idx = int(data.split(":", 1)[1])
+            idx = self._validator.parse_callback_int(data)
             active_set = self._bridge.get_active_rule_set(comp_id)
             rules = active_set.get("rules", []) if active_set else []
             if not (1 <= idx <= len(rules)):
@@ -468,7 +503,7 @@ class TelegramIOManager(BaseIOManager):
             return True
 
         if data.startswith("rule_edit_prio:"):
-            idx = int(data.split(":", 1)[1])
+            idx = self._validator.parse_callback_int(data)
             active_set = self._bridge.get_active_rule_set(comp_id)
             rules = active_set.get("rules", []) if active_set else []
             if not (1 <= idx <= len(rules)):
@@ -484,7 +519,10 @@ class TelegramIOManager(BaseIOManager):
 
         if data.startswith("rule_set_prio:"):
             parts = data.split(":", 2)
-            idx, new_prio = int(parts[1]), parts[2]
+            if len(parts) < 3:
+                raise ValueError(f"Malformed priority callback '{data}'.")
+            idx = self._validator.parse_callback_int(data, part_index=1)
+            new_prio = parts[2]
             active_set = self._bridge.get_active_rule_set(comp_id)
             rules = list(active_set.get("rules") or []) if active_set else []
             if active_set and 1 <= idx <= len(rules):
@@ -520,7 +558,7 @@ class TelegramIOManager(BaseIOManager):
             return True
 
         if data.startswith("rule_del:"):
-            idx = int(data.split(":", 1)[1])
+            idx = self._validator.parse_callback_int(data)
             active_set = self._bridge.get_active_rule_set(comp_id)
             rules = list(active_set.get("rules") or []) if active_set else []
             if active_set and 1 <= idx <= len(rules):
@@ -561,23 +599,40 @@ class TelegramIOManager(BaseIOManager):
     def _register_handlers(self) -> None:
         @self._bot.message_handler(commands=["start", "menu", "help"])
         def handle_start(message: Message):
-            user_label = message.from_user.username or message.from_user.first_name or str(message.from_user.id)
-            self._log_server_event(
-                "COMMAND",
-                f"/{message.text.lstrip('/').split()[0]} from user={user_label} (id={message.from_user.id})",
-            )
-            self._send_main_dashboard(message.chat.id, message.from_user.id)
+            try:
+                user_label = message.from_user.username or message.from_user.first_name or str(message.from_user.id)
+                cmd_word = (message.text or "/start").lstrip("/").split()[0]
+                self._log_server_event(
+                    "COMMAND",
+                    f"/{cmd_word} from user={user_label} (id={message.from_user.id})",
+                )
+                self._send_main_dashboard(message.chat.id, message.from_user.id)
+            except Exception as err:
+                self._notify_user_error(message.chat.id, "Could not load dashboard", err, reply_to_message=message)
 
         @self._bot.message_handler(content_types=["document"])
         def handle_pdf_upload(message: Message):
-            comp_name, comp_info = self._get_active_company(message.from_user.id)
+            try:
+                comp_name, comp_info = self._get_active_company(message.from_user.id)
+            except Exception as err:
+                self._notify_user_error(message.chat.id, "Could not resolve company", err, reply_to_message=message)
+                return
+
             if not comp_name or not comp_info:
                 self._bot.reply_to(message, "⚠️ Create or join a Company Folder first using /start.")
                 return
 
-            doc = message.document
-            if not doc.file_name or not doc.file_name.lower().endswith(".pdf"):
+            doc = getattr(message, "document", None)
+            if doc is None or not getattr(doc, "file_name", None) or not doc.file_name.lower().endswith(".pdf"):
                 self._bot.reply_to(message, "❌ Only <b>.pdf</b> files are accepted.")
+                return
+
+            file_size = getattr(doc, "file_size", None)
+            if isinstance(file_size, int) and file_size > self.MAX_TELEGRAM_PDF_BYTES:
+                self._bot.reply_to(
+                    message,
+                    f"❌ <b>{html.escape(doc.file_name)}</b> exceeds Telegram's 20 MB bot download limit.",
+                )
                 return
 
             comp_id = comp_info["company_id"]
@@ -589,7 +644,11 @@ class TelegramIOManager(BaseIOManager):
             )
             try:
                 file_info = self._bot.get_file(doc.file_id)
+                if not getattr(file_info, "file_path", None):
+                    raise ValueError("Telegram did not return a downloadable file path.")
                 pdf_bytes = self._bot.download_file(file_info.file_path)
+                if not pdf_bytes:
+                    raise ValueError("Downloaded PDF file is empty (0 bytes).")
 
                 upload_info = self._bridge.upload_resume(
                     company_id=comp_id,
@@ -629,162 +688,170 @@ class TelegramIOManager(BaseIOManager):
                     )
             except Exception as err:
                 self._log_server_event("ERROR", f"PDF upload failed for '{doc.file_name}': {err}")
-                self._bot.edit_message_text(
+                self._edit_safe_html(
+                    message.chat.id,
+                    status_msg.message_id,
                     f"❌ Upload failed: {html.escape(str(err))}",
-                    chat_id=message.chat.id,
-                    message_id=status_msg.message_id,
                 )
 
         @self._bot.message_handler(content_types=["text"])
         def handle_text_message(message: Message):
-            self._bot.reply_to(
-                message,
-                "📤 Send a <b>.pdf</b> resume here to upload it, or tap /menu to open your dashboard.",
-            )
+            try:
+                self._bot.reply_to(
+                    message,
+                    "📤 Send a <b>.pdf</b> resume here to upload it, or tap /menu to open your dashboard.",
+                )
+            except Exception as err:
+                self._log_server_event("ERROR", f"Failed to reply to text message: {err}")
 
         @self._bot.callback_query_handler(func=lambda call: True)
         def handle_callbacks(call: CallbackQuery):
             chat_id = call.message.chat.id
             user_id = call.from_user.id
             data = call.data or ""
-            self._bot.answer_callback_query(call.id)
+            self._answer_callback_safe(call.id)
 
-            if data == "auth_create":
-                msg = self._bot.send_message(chat_id, "🏢 Enter your new <b>Company Name</b>:")
-                self._bot.register_next_step_handler(msg, self._step_create_company_name)
-                return
-
-            if data == "auth_join":
-                msg = self._bot.send_message(chat_id, "🔑 Enter your team's <b>Invite Code</b>:")
-                self._bot.register_next_step_handler(msg, self._step_join_company_code)
-                return
-
-            if data == "menu_switch":
-                self._session_store.clear_active_company(user_id)
-                self._log_server_event("AUTH", f"User {user_id} opened Switch/Logout menu.")
-                self._bot.send_message(
-                    chat_id,
-                    "🔄 <b>Switch or Authenticate Company Folder:</b>",
-                    reply_markup=self._keyboards.auth_menu(),
-                )
-                return
-
-            comp_name, comp_info = self._get_active_company(user_id)
-            if not comp_name or not comp_info:
-                self._bot.send_message(
-                    chat_id,
-                    "Please create or join a company folder first:",
-                    reply_markup=self._keyboards.auth_menu(),
-                )
-                return
-
-            comp_id = comp_info["company_id"]
-
-            if data == "menu_main":
-                self._send_main_dashboard(chat_id, user_id)
-                return
-
-            if self._handle_rules_callbacks(data, chat_id, comp_name, comp_id):
-                return
-
-            # ---- Resume Management ----
-            if data == "menu_resumes":
-                self._send_resumes_menu(chat_id, comp_name, comp_id)
-
-            elif data == "res_del_menu":
-                resumes = self._bridge.list_resumes(comp_id)
-                if not resumes:
-                    self._bot.send_message(chat_id, "ℹ️ No resumes available to delete.")
+            try:
+                if data == "auth_create":
+                    msg = self._bot.send_message(chat_id, "🏢 Enter your new <b>Company Name</b>:")
+                    self._bot.register_next_step_handler(msg, self._step_create_company_name)
                     return
-                self._bot.send_message(
-                    chat_id,
-                    "Tap a resume below to delete it:",
-                    reply_markup=self._keyboards.delete_resumes_menu(resumes),
-                )
 
-            elif data.startswith("res_del:"):
-                idx = int(data.split(":", 1)[1])
-                resumes = self._bridge.list_resumes(comp_id)
-                if 1 <= idx <= len(resumes):
-                    target_name = resumes[idx - 1].get("file_name") or resumes[idx - 1].get("file")
-                    if target_name and self._bridge.delete_resume(comp_id, target_name):
-                        self._log_server_event("RESUMES", f"company='{comp_name}' deleted '{target_name}'")
-                        self._bot.send_message(chat_id, f"🗑 Removed Resume: <b>{html.escape(target_name)}</b>")
-                self._send_resumes_menu(chat_id, comp_name, comp_id)
+                if data == "auth_join":
+                    msg = self._bot.send_message(chat_id, "🔑 Enter your team's <b>Invite Code</b>:")
+                    self._bot.register_next_step_handler(msg, self._step_join_company_code)
+                    return
 
-            elif data == "res_clear":
-                self._bridge.clear_resumes(comp_id)
-                self._log_server_event("RESUMES", f"company='{comp_name}' cleared all resumes.")
-                self._bot.send_message(chat_id, "🧹 All resumes cleared for this company.")
-                self._send_resumes_menu(chat_id, comp_name, comp_id)
-
-            # ---- Top-N Limit Configuration ----
-            elif data == "menu_topn":
-                resume_count = len(self._bridge.list_resumes(comp_id))
-                curr_n = self._session_store.get_effective_top_n(chat_id, resume_count)
-                avail_hint = (
-                    f"\nUploaded resumes: <b>{resume_count}</b> (max limit: <b>{resume_count}</b>)"
-                    if resume_count > 0
-                    else "\n<i>No resumes uploaded yet — limit will auto-cap once resumes are added.</i>"
-                )
-                self._bot.send_message(
-                    chat_id,
-                    f"🎯 <b>Select Candidate Shortlist Limit (Top N):</b>\n\n"
-                    f"Current limit: <b>{curr_n}</b>{avail_hint}",
-                    reply_markup=self._keyboards.top_n_menu(curr_n, max_resumes=resume_count),
-                )
-
-            elif data == "set_topn_custom":
-                resume_count = len(self._bridge.list_resumes(comp_id))
-                max_n = resume_count if resume_count > 0 else 100
-                msg = self._bot.send_message(
-                    chat_id,
-                    f"✏️ <b>Enter Custom Top N Limit:</b>\n"
-                    f"Send a positive whole number between <code>1</code> and <code>{max_n}</code>:",
-                )
-                self._bot.register_next_step_handler(msg, self._step_set_custom_topn)
-
-            elif data.startswith("set_topn:"):
-                requested_n = int(data.split(":", 1)[1])
-                resume_count = len(self._bridge.list_resumes(comp_id))
-                effective_n, was_capped = self._validator.cap_top_n(requested_n, resume_count)
-                self._session_store.set_top_n(chat_id, effective_n)
-                self._log_server_event("CONFIG", f"company='{comp_name}' set top_n={effective_n}")
-                if was_capped:
+                if data == "menu_switch":
+                    self._session_store.clear_active_company(user_id)
+                    self._log_server_event("AUTH", f"User {user_id} opened Switch/Logout menu.")
                     self._bot.send_message(
                         chat_id,
-                        f"ℹ️ Only <b>{resume_count}</b> resume(s) uploaded — Top N Limit capped to <b>{effective_n}</b>!",
+                        "🔄 <b>Switch or Authenticate Company Folder:</b>",
+                        reply_markup=self._keyboards.auth_menu(),
                     )
-                else:
-                    self._bot.send_message(chat_id, f"🎯 <b>Top N Shortlist Limit set to {effective_n}!</b>")
-                self._send_main_dashboard(chat_id, user_id)
+                    return
 
-            # ---- Screening, Results & Summary (Scoped to Active Rule Set) ----
-            elif data == "menu_screen":
-                self._trigger_screening(chat_id, user_id, comp_name, comp_id)
+                comp_name, comp_info = self._get_active_company(user_id)
+                if not comp_name or not comp_info:
+                    self._bot.send_message(
+                        chat_id,
+                        "Please create or join a company folder first:",
+                        reply_markup=self._keyboards.auth_menu(),
+                    )
+                    return
 
-            elif data == "menu_results":
-                self._send_results_view(chat_id, comp_name, comp_id)
+                comp_id = comp_info["company_id"]
 
-            elif data == "menu_summary":
-                self._send_summary_breakdown(chat_id, comp_name, comp_id)
+                if data == "menu_main":
+                    self._send_main_dashboard(chat_id, user_id)
+                    return
 
-            elif data.startswith("cand_view:"):
-                idx = int(data.split(":", 1)[1])
-                active_set = self._bridge.get_active_rule_set(comp_id)
-                active_set_id = active_set["rule_set_id"] if active_set else None
-                results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
-                top_n = self._session_store.get_top_n(chat_id)
-                ranked = results[:top_n]
-                if 1 <= idx <= len(ranked):
-                    msg = self._formatter.format_candidate_profile(ranked[idx - 1], idx)
-                    self._send_safe_html(chat_id, msg, reply_markup=self._keyboards.candidate_profile_menu(idx))
-                else:
-                    self._bot.send_message(chat_id, "⚠️ Candidate profile not found. Re-open results.")
+                if self._handle_rules_callbacks(data, chat_id, comp_name, comp_id):
+                    return
 
-            elif data.startswith("cand_pdf:"):
-                idx = int(data.split(":", 1)[1])
-                self._send_candidate_pdf(chat_id, comp_name, comp_id, idx)
+                # ---- Resume Management ----
+                if data == "menu_resumes":
+                    self._send_resumes_menu(chat_id, comp_name, comp_id)
+
+                elif data == "res_del_menu":
+                    resumes = self._bridge.list_resumes(comp_id)
+                    if not resumes:
+                        self._bot.send_message(chat_id, "ℹ️ No resumes available to delete.")
+                        return
+                    self._bot.send_message(
+                        chat_id,
+                        "Tap a resume below to delete it:",
+                        reply_markup=self._keyboards.delete_resumes_menu(resumes),
+                    )
+
+                elif data.startswith("res_del:"):
+                    idx = self._validator.parse_callback_int(data)
+                    resumes = self._bridge.list_resumes(comp_id)
+                    if 1 <= idx <= len(resumes):
+                        target_name = resumes[idx - 1].get("file_name") or resumes[idx - 1].get("file")
+                        if target_name and self._bridge.delete_resume(comp_id, target_name):
+                            self._log_server_event("RESUMES", f"company='{comp_name}' deleted '{target_name}'")
+                            self._bot.send_message(chat_id, f"🗑 Removed Resume: <b>{html.escape(target_name)}</b>")
+                    self._send_resumes_menu(chat_id, comp_name, comp_id)
+
+                elif data == "res_clear":
+                    self._bridge.clear_resumes(comp_id)
+                    self._log_server_event("RESUMES", f"company='{comp_name}' cleared all resumes.")
+                    self._bot.send_message(chat_id, "🧹 All resumes cleared for this company.")
+                    self._send_resumes_menu(chat_id, comp_name, comp_id)
+
+                # ---- Top-N Limit Configuration ----
+                elif data == "menu_topn":
+                    resume_count = len(self._bridge.list_resumes(comp_id))
+                    curr_n = self._session_store.get_effective_top_n(chat_id, resume_count)
+                    avail_hint = (
+                        f"\nUploaded resumes: <b>{resume_count}</b> (max limit: <b>{resume_count}</b>)"
+                        if resume_count > 0
+                        else "\n<i>No resumes uploaded yet — limit will auto-cap once resumes are added.</i>"
+                    )
+                    self._bot.send_message(
+                        chat_id,
+                        f"🎯 <b>Select Candidate Shortlist Limit (Top N):</b>\n\n"
+                        f"Current limit: <b>{curr_n}</b>{avail_hint}",
+                        reply_markup=self._keyboards.top_n_menu(curr_n, max_resumes=resume_count),
+                    )
+
+                elif data == "set_topn_custom":
+                    resume_count = len(self._bridge.list_resumes(comp_id))
+                    max_n = resume_count if resume_count > 0 else 100
+                    msg = self._bot.send_message(
+                        chat_id,
+                        f"✏️ <b>Enter Custom Top N Limit:</b>\n"
+                        f"Send a positive whole number between <code>1</code> and <code>{max_n}</code>:",
+                    )
+                    self._bot.register_next_step_handler(msg, self._step_set_custom_topn)
+
+                elif data.startswith("set_topn:"):
+                    requested_n = self._validator.parse_callback_int(data)
+                    resume_count = len(self._bridge.list_resumes(comp_id))
+                    effective_n, was_capped = self._validator.cap_top_n(requested_n, resume_count)
+                    self._session_store.set_top_n(chat_id, effective_n)
+                    self._log_server_event("CONFIG", f"company='{comp_name}' set top_n={effective_n}")
+                    if was_capped:
+                        self._bot.send_message(
+                            chat_id,
+                            f"ℹ️ Only <b>{resume_count}</b> resume(s) uploaded — Top N Limit capped to <b>{effective_n}</b>!",
+                        )
+                    else:
+                        self._bot.send_message(chat_id, f"🎯 <b>Top N Shortlist Limit set to {effective_n}!</b>")
+                    self._send_main_dashboard(chat_id, user_id)
+
+                # ---- Screening, Results & Summary (Scoped to Active Rule Set) ----
+                elif data == "menu_screen":
+                    self._trigger_screening(chat_id, user_id, comp_name, comp_id)
+
+                elif data == "menu_results":
+                    self._send_results_view(chat_id, comp_name, comp_id)
+
+                elif data == "menu_summary":
+                    self._send_summary_breakdown(chat_id, comp_name, comp_id)
+
+                elif data.startswith("cand_view:"):
+                    idx = self._validator.parse_callback_int(data)
+                    active_set = self._bridge.get_active_rule_set(comp_id)
+                    active_set_id = active_set["rule_set_id"] if active_set else None
+                    results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
+                    top_n = self._session_store.get_top_n(chat_id)
+                    ranked = results[:top_n]
+                    if 1 <= idx <= len(ranked):
+                        msg = self._formatter.format_candidate_profile(ranked[idx - 1], idx)
+                        self._send_safe_html(chat_id, msg, reply_markup=self._keyboards.candidate_profile_menu(idx))
+                    else:
+                        self._bot.send_message(chat_id, "⚠️ Candidate profile not found. Re-open results.")
+
+                elif data.startswith("cand_pdf:"):
+                    idx = self._validator.parse_callback_int(data)
+                    self._send_candidate_pdf(chat_id, comp_name, comp_id, idx)
+            except (ValueError, BridgeStorageError) as err:
+                self._notify_user_error(chat_id, "Action failed", err)
+            except Exception as err:
+                self._notify_user_error(chat_id, "Unexpected error processing request", err)
 
     # -------------------------------------------------------------------------
     # Conversational Step Handlers
@@ -800,21 +867,24 @@ class TelegramIOManager(BaseIOManager):
             self._bot.register_next_step_handler(msg, self._step_set_custom_topn)
             return
 
-        requested_n = int(text)
-        _, comp_info = self._get_active_company(message.from_user.id)
-        resume_count = len(self._bridge.list_resumes(comp_info["company_id"])) if comp_info else 0
-        val, was_capped = self._validator.cap_top_n(requested_n, resume_count)
+        try:
+            requested_n = int(text)
+            _, comp_info = self._get_active_company(message.from_user.id)
+            resume_count = len(self._bridge.list_resumes(comp_info["company_id"])) if comp_info else 0
+            val, was_capped = self._validator.cap_top_n(requested_n, resume_count)
 
-        self._session_store.set_top_n(message.chat.id, val)
-        self._log_server_event("CONFIG", f"user={message.from_user.id} set custom top_n={val}")
-        if was_capped:
-            self._bot.send_message(
-                message.chat.id,
-                f"ℹ️ Only <b>{resume_count}</b> resume(s) uploaded — Top N Shortlist Limit capped to <b>{val}</b>!",
-            )
-        else:
-            self._bot.send_message(message.chat.id, f"✅ <b>Top N Shortlist Limit set to {val}!</b>")
-        self._send_main_dashboard(message.chat.id, message.from_user.id)
+            self._session_store.set_top_n(message.chat.id, val)
+            self._log_server_event("CONFIG", f"user={message.from_user.id} set custom top_n={val}")
+            if was_capped:
+                self._bot.send_message(
+                    message.chat.id,
+                    f"ℹ️ Only <b>{resume_count}</b> resume(s) uploaded — Top N Shortlist Limit capped to <b>{val}</b>!",
+                )
+            else:
+                self._bot.send_message(message.chat.id, f"✅ <b>Top N Shortlist Limit set to {val}!</b>")
+            self._send_main_dashboard(message.chat.id, message.from_user.id)
+        except Exception as err:
+            self._notify_user_error(message.chat.id, "Could not update Top N limit", err, reply_to_message=message)
 
     def _step_create_company_name(self, message: Message) -> None:
         try:
@@ -867,7 +937,12 @@ class TelegramIOManager(BaseIOManager):
 
     def _step_join_company_code(self, message: Message) -> None:
         code = (message.text or "").strip().upper()
-        record = self._bridge.get_company_by_invite(code)
+        try:
+            record = self._bridge.get_company_by_invite(code)
+        except Exception as err:
+            self._notify_user_error(message.chat.id, "Invite lookup failed", err, reply_to_message=message)
+            return
+
         if not record:
             self._bot.reply_to(message, "❌ Invalid Invite Code. Use /start to try again.")
             return
@@ -884,9 +959,13 @@ class TelegramIOManager(BaseIOManager):
 
         comp_name = record["company_name"]
         comp_id = record["company_id"]
-        self._bridge.add_company_member(comp_id, comp_name, message.from_user.id)
-        self._session_store.set_active_company_name(message.from_user.id, comp_name)
+        try:
+            self._bridge.add_company_member(comp_id, comp_name, message.from_user.id)
+        except Exception as err:
+            self._notify_user_error(message.chat.id, "Could not join company", err, reply_to_message=message)
+            return
 
+        self._session_store.set_active_company_name(message.from_user.id, comp_name)
         self._log_server_event("AUTH", f"User {message.from_user.id} joined '{comp_name}' (id=#{comp_id}).")
         self._bot.send_message(message.chat.id, f"✅ Joined <b>{html.escape(comp_name)}</b>!")
         self._send_main_dashboard(message.chat.id, message.from_user.id)
@@ -895,9 +974,12 @@ class TelegramIOManager(BaseIOManager):
         set_name = (message.text or "").strip()
         try:
             created = self._bridge.create_rule_set(company_id=comp_id, set_name=set_name, rules=[])
-        except ValueError as err:
-            self._bot.reply_to(message, f"❌ {html.escape(str(err))}")
-            self._send_rules_menu(message.chat.id, comp_name, comp_id)
+        except Exception as err:
+            self._notify_user_error(message.chat.id, "Could not create Rule Set", err, reply_to_message=message)
+            try:
+                self._send_rules_menu(message.chat.id, comp_name, comp_id)
+            except Exception:
+                pass
             return
 
         self._log_server_event(
@@ -921,9 +1003,12 @@ class TelegramIOManager(BaseIOManager):
         new_name = (message.text or "").strip()
         try:
             updated = self._bridge.update_rule_set(company_id=comp_id, rule_set_id=rule_set_id, set_name=new_name)
-        except ValueError as err:
-            self._bot.reply_to(message, f"❌ {html.escape(str(err))}")
-            self._send_rules_menu(message.chat.id, comp_name, comp_id)
+        except Exception as err:
+            self._notify_user_error(message.chat.id, "Could not rename Rule Set", err, reply_to_message=message)
+            try:
+                self._send_rules_menu(message.chat.id, comp_name, comp_id)
+            except Exception:
+                pass
             return
 
         self._log_server_event(
@@ -952,7 +1037,12 @@ class TelegramIOManager(BaseIOManager):
             self._send_rules_menu(message.chat.id, comp_name, comp_id)
             return
 
-        active_set = self._bridge.set_active_rule_set(comp_id, rule_set_id) or self._bridge.get_active_rule_set(comp_id)
+        try:
+            active_set = self._bridge.set_active_rule_set(comp_id, rule_set_id) or self._bridge.get_active_rule_set(comp_id)
+        except Exception as err:
+            self._notify_user_error(message.chat.id, "Could not load Rule Set", err, reply_to_message=message)
+            return
+
         existing = active_set.get("rules", []) if active_set else []
         if any(r.get("text", "").lower() == text.lower() for r in existing):
             self._bot.reply_to(message, "❌ That rule is already in this set. Please enter a unique rule.")
@@ -975,27 +1065,30 @@ class TelegramIOManager(BaseIOManager):
         idx: int,
     ) -> None:
         new_text = (message.text or "").strip()
-        active_set = self._bridge.set_active_rule_set(comp_id, rule_set_id) or self._bridge.get_active_rule_set(comp_id)
-        rules = list(active_set.get("rules") or []) if active_set else []
-        if not (active_set and 1 <= idx <= len(rules)):
-            self._bot.reply_to(message, "⚠️ Rule set or rule not found.")
-            self._send_rules_menu(message.chat.id, comp_name, comp_id)
-            return
-
-        if any(i != (idx - 1) and r.get("text", "").lower() == new_text.lower() for i, r in enumerate(rules)):
-            self._bot.reply_to(message, "❌ Another rule in this set already has that text.")
-            self._send_rules_menu(message.chat.id, comp_name, comp_id)
-            return
-
         try:
+            active_set = self._bridge.set_active_rule_set(comp_id, rule_set_id) or self._bridge.get_active_rule_set(comp_id)
+            rules = list(active_set.get("rules") or []) if active_set else []
+            if not (active_set and 1 <= idx <= len(rules)):
+                self._bot.reply_to(message, "⚠️ Rule set or rule not found.")
+                self._send_rules_menu(message.chat.id, comp_name, comp_id)
+                return
+
+            if any(i != (idx - 1) and r.get("text", "").lower() == new_text.lower() for i, r in enumerate(rules)):
+                self._bot.reply_to(message, "❌ Another rule in this set already has that text.")
+                self._send_rules_menu(message.chat.id, comp_name, comp_id)
+                return
+
             updated = self._validator.validate_and_normalize_rule(new_text, rules[idx - 1]["priority"])
-        except ValueError as err:
-            self._bot.reply_to(message, f"❌ {html.escape(str(err))}")
-            self._send_rules_menu(message.chat.id, comp_name, comp_id)
+            rules[idx - 1] = updated
+            self._bridge.update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
+        except Exception as err:
+            self._notify_user_error(message.chat.id, "Could not update rule", err, reply_to_message=message)
+            try:
+                self._send_rules_menu(message.chat.id, comp_name, comp_id)
+            except Exception:
+                pass
             return
 
-        rules[idx - 1] = updated
-        self._bridge.update_rule_set(comp_id, active_set["rule_set_id"], rules=rules)
         self._log_server_event(
             "RULES",
             f"company='{comp_name}' set='{active_set['set_name']}' edited rule #{idx} text -> '{updated['text']}'",
@@ -1153,11 +1246,15 @@ class TelegramIOManager(BaseIOManager):
         self._send_safe_html(chat_id, msg, reply_markup=self._keyboards.results_menu(len(ranked)))
 
     def _send_candidate_pdf(self, chat_id: int, comp_name: str, comp_id: int, idx: int) -> None:
-        active_set = self._bridge.get_active_rule_set(comp_id)
-        active_set_id = active_set["rule_set_id"] if active_set else None
-        results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
-        ranked = results[: self._session_store.get_top_n(chat_id)]
+        try:
+            active_set = self._bridge.get_active_rule_set(comp_id)
+            active_set_id = active_set["rule_set_id"] if active_set else None
+            results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
+        except Exception as err:
+            self._notify_user_error(chat_id, "Could not load candidate PDF", err)
+            return
 
+        ranked = results[: self._session_store.get_top_n(chat_id)]
         if not ranked or idx < 1 or idx > len(ranked):
             self._bot.send_message(chat_id, "⚠️ Candidate not found.")
             return
@@ -1167,25 +1264,32 @@ class TelegramIOManager(BaseIOManager):
             self._bot.send_message(chat_id, "❌ Resume filename not available.")
             return
 
-        pdf_bytes = self._bridge.get_resume_pdf_bytes(comp_id, filename)
-        if pdf_bytes:
-            bio = io.BytesIO(pdf_bytes)
-            bio.name = filename
-            self._bot.send_document(
-                chat_id,
-                bio,
-                visible_file_name=filename,
-                caption=f"📄 Resume ({html.escape(comp_name)}): <b>{html.escape(filename)}</b>",
-            )
-            return
+        try:
+            pdf_bytes = self._bridge.get_resume_pdf_bytes(comp_id, filename)
+            if pdf_bytes:
+                bio = io.BytesIO(pdf_bytes)
+                bio.name = filename
+                self._bot.send_document(
+                    chat_id,
+                    bio,
+                    visible_file_name=filename,
+                    caption=f"📄 Resume ({html.escape(comp_name)}): <b>{html.escape(filename)}</b>",
+                )
+                return
+        except Exception as err:
+            self._log_server_event("ERROR", f"Direct PDF send failed for '{filename}': {err}")
 
-        resumes = self._bridge.list_resumes(comp_id)
-        matched = next((r for r in resumes if (r.get("file_name") or r.get("file")) == filename), None)
-        if matched and matched.get("pdf_url"):
-            self._bot.send_message(
-                chat_id,
-                f"📄 <b>{html.escape(filename)}</b>\n🔗 Download URL: {html.escape(matched['pdf_url'])}",
-            )
+        try:
+            resumes = self._bridge.list_resumes(comp_id)
+            matched = next((r for r in resumes if (r.get("file_name") or r.get("file")) == filename), None)
+            if matched and matched.get("pdf_url"):
+                self._bot.send_message(
+                    chat_id,
+                    f"📄 <b>{html.escape(filename)}</b>\n🔗 Download URL: {html.escape(matched['pdf_url'])}",
+                )
+                return
+        except Exception as err:
+            self._notify_user_error(chat_id, f"Could not retrieve '{filename}'", err)
             return
 
         self._bot.send_message(chat_id, f"❌ PDF file '{html.escape(filename)}' not found in storage.")
@@ -1226,7 +1330,14 @@ class TelegramIOManager(BaseIOManager):
             return
         mode = "CLOUD (DataManager)" if self._bridge.use_cloud else "CLOUD STUB (In-Memory)"
         self._log_server_event("SERVER", f"Telegram Bot polling started [{mode}]. Waiting for user messages...")
-        self._bot.infinity_polling(timeout=20, long_polling_timeout=10)
+        try:
+            self._bot.infinity_polling(timeout=20, long_polling_timeout=10)
+        except KeyboardInterrupt:
+            self._log_server_event("SERVER", "Polling interrupted by operator.")
+            raise
+        except Exception as err:
+            self._log_server_event("ERROR", f"Telegram polling terminated unexpectedly: {err}")
+            raise RuntimeError(f"Telegram polling failed: {err}") from err
 
 
 if __name__ == "__main__":

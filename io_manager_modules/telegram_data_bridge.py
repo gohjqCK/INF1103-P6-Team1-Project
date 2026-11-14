@@ -13,6 +13,10 @@ except ImportError:
     _PYPDF_AVAILABLE = False
 
 
+class BridgeStorageError(RuntimeError):
+    """Raised when a cloud or local persistence operation fails unexpectedly."""
+
+
 class TelegramDataBridge:
     """Encapsulates company, rule-set, resume, and results persistence for TelegramIOManager."""
 
@@ -53,6 +57,16 @@ class TelegramDataBridge:
             and hasattr(self._data_manager, method_name)
         )
 
+    @staticmethod
+    def _call_cloud(operation: str, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Executes a cloud DataManager call, normalizing unexpected failures to BridgeStorageError."""
+        try:
+            return fn(*args, **kwargs)
+        except ValueError:
+            raise
+        except Exception as err:
+            raise BridgeStorageError(f"{operation} failed: {err}") from err
+
     # ---- Companies & Membership ----
 
     def create_company(
@@ -64,7 +78,9 @@ class TelegramDataBridge:
     ) -> Dict[str, Any]:
         """Creates a new company record in Supabase or stub store."""
         if self._cloud_has("create_company"):
-            record = self._data_manager.create_company(
+            record = self._call_cloud(
+                "Create company",
+                self._data_manager.create_company,
                 company_name=name,
                 passcode_hash=passcode_hash,
                 owner_id=owner_id,
@@ -98,7 +114,11 @@ class TelegramDataBridge:
         """Fetches a company record by case-insensitive invite code."""
         code = invite_code.strip().upper()
         if self._cloud_has("get_company_by_invite"):
-            record = self._data_manager.get_company_by_invite(code)
+            record = self._call_cloud(
+                "Look up invite code",
+                self._data_manager.get_company_by_invite,
+                code,
+            )
             if record:
                 with self._lock:
                     self._companies[record["company_name"]] = record
@@ -113,7 +133,12 @@ class TelegramDataBridge:
     def add_company_member(self, company_id: int, comp_name: str, user_id: int) -> None:
         """Adds user_id as a member of company_id."""
         if self._cloud_has("add_company_member"):
-            self._data_manager.add_company_member(company_id=company_id, user_id=user_id)
+            self._call_cloud(
+                "Add company member",
+                self._data_manager.add_company_member,
+                company_id=company_id,
+                user_id=user_id,
+            )
 
         with self._lock:
             if comp_name in self._companies:
@@ -150,7 +175,14 @@ class TelegramDataBridge:
     def list_rule_sets(self, company_id: int) -> List[Dict[str, Any]]:
         """Lists all business rule sets belonging to company_id."""
         if self._cloud_has("list_company_rule_sets"):
-            sets = self._data_manager.list_company_rule_sets(company_id) or []
+            sets = (
+                self._call_cloud(
+                    "List rule sets",
+                    self._data_manager.list_company_rule_sets,
+                    company_id,
+                )
+                or []
+            )
             return [
                 {
                     "rule_set_id": rs.get("rule_set_id") or rs.get("id"),
@@ -213,7 +245,9 @@ class TelegramDataBridge:
         normalized_rules = self._validator.normalize_rules_list(rules, strict=True)
 
         if self._cloud_has("create_company_rule_set"):
-            created = self._data_manager.create_company_rule_set(
+            created = self._call_cloud(
+                "Create rule set",
+                self._data_manager.create_company_rule_set,
                 company_id=company_id,
                 set_name=clean_name,
                 rules=normalized_rules,
@@ -266,7 +300,9 @@ class TelegramDataBridge:
         )
 
         if self._cloud_has("update_company_rule_set"):
-            updated = self._data_manager.update_company_rule_set(
+            updated = self._call_cloud(
+                "Update rule set",
+                self._data_manager.update_company_rule_set,
                 company_id=company_id,
                 rule_set_id=rule_set_id,
                 set_name=clean_name,
@@ -297,7 +333,14 @@ class TelegramDataBridge:
     def delete_rule_set(self, company_id: int, rule_set_id: int) -> bool:
         """Deletes rule_set_id and re-selects the active rule set if needed."""
         if self._cloud_has("delete_company_rule_set"):
-            deleted = bool(self._data_manager.delete_company_rule_set(company_id, rule_set_id))
+            deleted = bool(
+                self._call_cloud(
+                    "Delete rule set",
+                    self._data_manager.delete_company_rule_set,
+                    company_id,
+                    rule_set_id,
+                )
+            )
         else:
             with self._lock:
                 sets = self._company_rule_sets.get(company_id, [])
@@ -316,11 +359,31 @@ class TelegramDataBridge:
 
     def parse_pdf_bytes_in_memory(self, file_name: str, pdf_bytes: bytes) -> Dict[str, Any]:
         """Parses in-memory PDF bytes via DataManager or local pypdf fallback."""
+        if not pdf_bytes:
+            return {
+                "file": file_name,
+                "file_name": file_name,
+                "status": "invalid",
+                "reason": "Uploaded PDF file is empty (0 bytes).",
+                "pages": 0,
+                "text": "",
+            }
+
         if self._data_manager is not None and hasattr(self._data_manager, "parse_pdf_bytes"):
-            resume_obj = self._data_manager.parse_pdf_bytes(file_name, pdf_bytes)
-            result = resume_obj.to_dict()
-            result["file_name"] = file_name
-            return result
+            try:
+                resume_obj = self._data_manager.parse_pdf_bytes(file_name, pdf_bytes)
+                result = resume_obj.to_dict()
+                result["file_name"] = file_name
+                return result
+            except Exception as err:
+                return {
+                    "file": file_name,
+                    "file_name": file_name,
+                    "status": "invalid",
+                    "reason": f"Could not read the PDF file: {err}",
+                    "pages": 0,
+                    "text": "",
+                }
 
         if not _PYPDF_AVAILABLE:
             return {
@@ -380,8 +443,13 @@ class TelegramDataBridge:
         pdf_bytes: bytes,
     ) -> Dict[str, Any]:
         """Uploads raw PDF bytes to cloud Storage or session stub store."""
+        if not pdf_bytes:
+            raise ValueError("Uploaded PDF file is empty (0 bytes).")
+
         if self._cloud_has("upload_resume_bytes"):
-            result = self._data_manager.upload_resume_bytes(
+            result = self._call_cloud(
+                "Upload resume",
+                self._data_manager.upload_resume_bytes,
                 file_name=file_name,
                 pdf_bytes=pdf_bytes,
                 company_id=company_id,
@@ -413,14 +481,23 @@ class TelegramDataBridge:
     def list_resumes(self, company_id: int) -> List[Dict[str, Any]]:
         """Lists uploaded resumes for company_id."""
         if self._cloud_has("list_company_resumes"):
-            return list(self._data_manager.list_company_resumes(company_id) or [])
+            rows = self._call_cloud(
+                "List resumes",
+                self._data_manager.list_company_resumes,
+                company_id,
+            )
+            return list(rows or [])
 
         if (
             self._use_cloud
             and self._data_manager is not None
             and hasattr(self._data_manager, "db_handler")
         ):
-            rows = self._data_manager.db_handler.fetch_resume_files(company_id=company_id)
+            rows = self._call_cloud(
+                "Fetch resume files",
+                self._data_manager.db_handler.fetch_resume_files,
+                company_id=company_id,
+            )
             return [
                 {
                     "file": row.get("file_name"),
@@ -432,7 +509,7 @@ class TelegramDataBridge:
                     "pdf_url": row.get("pdf_url", ""),
                     "source": "Supabase Cloud",
                 }
-                for row in rows
+                for row in (rows or [])
             ]
 
         with self._lock:
@@ -441,7 +518,14 @@ class TelegramDataBridge:
     def delete_resume(self, company_id: int, file_name: str) -> bool:
         """Deletes a single resume for company_id."""
         if self._cloud_has("delete_company_resume"):
-            return bool(self._data_manager.delete_company_resume(company_id, file_name))
+            return bool(
+                self._call_cloud(
+                    "Delete resume",
+                    self._data_manager.delete_company_resume,
+                    company_id,
+                    file_name,
+                )
+            )
 
         with self._lock:
             bucket = self._company_resumes.get(company_id, [])
@@ -453,7 +537,11 @@ class TelegramDataBridge:
     def clear_resumes(self, company_id: int) -> None:
         """Deletes all resumes belonging to company_id."""
         if self._cloud_has("clear_company_resumes"):
-            self._data_manager.clear_company_resumes(company_id)
+            self._call_cloud(
+                "Clear resumes",
+                self._data_manager.clear_company_resumes,
+                company_id,
+            )
             return
 
         with self._lock:
@@ -462,7 +550,12 @@ class TelegramDataBridge:
     def get_resume_pdf_bytes(self, company_id: int, file_name: str) -> Optional[bytes]:
         """Downloads or retrieves raw PDF bytes for file_name."""
         if self._cloud_has("download_resume_bytes"):
-            return self._data_manager.download_resume_bytes(company_id, file_name)
+            return self._call_cloud(
+                "Download resume PDF",
+                self._data_manager.download_resume_bytes,
+                company_id,
+                file_name,
+            )
 
         with self._lock:
             for item in self._company_resumes.get(company_id, []):
@@ -486,7 +579,9 @@ class TelegramDataBridge:
     ) -> None:
         """Saves screening results and optional summary data scoped by company and rule set."""
         if self._cloud_has("save_screening_results"):
-            self._data_manager.save_screening_results(
+            self._call_cloud(
+                "Save screening results",
+                self._data_manager.save_screening_results,
                 company_id=company_id,
                 ranked_candidates=ranked_candidates,
                 summary_data=summary_data,
@@ -509,7 +604,9 @@ class TelegramDataBridge:
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Retrieves latest screening results and linked AI summary for company/rule set."""
         if self._cloud_has("get_screening_results"):
-            res = self._data_manager.get_screening_results(
+            res = self._call_cloud(
+                "Fetch screening results",
+                self._data_manager.get_screening_results,
                 company_id=company_id,
                 business_rules_id=business_rules_id,
             )
