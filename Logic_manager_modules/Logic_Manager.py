@@ -4,12 +4,15 @@ import json
 from pathlib import Path
 from json.decoder import JSONDecodeError
 from Logic_manager_modules.Resume import Resume
-from Logic_manager_modules.Profile import Profile
+from Logic_manager_modules.OnlineResume import OnlineResume
+from Logic_manager_modules.OfflineResume import OfflineResume
+from Logic_manager_modules.FilteredList import FilteredList
 from Logic_manager_modules.OverallList import OverallList
 from Logic_manager_modules.AcceptedList import AcceptedList
 from Logic_manager_modules.RejectedList import RejectedList
 from Logic_manager_modules.InvalidList import InvalidList
 from Logic_manager_modules.ResumeEvaluator import ResumeEvaluator
+from Logic_manager_modules.Offline_Screening import offline_screening_func  # re-exported for callers
 
 '''===========Logic_Manager Rules:=================
     variable resume only used in for loops
@@ -83,80 +86,33 @@ def validate_resume_keys_func(resume_list):
         resume_count+=1
     return result
 
-def combined_list_func():
-    return {"acceptedList":[],"rejectedList":[],"invalidList":[]}
+#
+def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredList]:
+    resume_list_copy=copy.deepcopy(resume_list)
 
-def create_classes(combinedList):
-
-    #creating classes
+    overallList=OverallList()
+    #creates accepted, rejected and invalid list and append all to Overall list
     acceptedList=AcceptedList()
     rejectedList=RejectedList()
     invalidList=InvalidList()
-    #assign list
-    acceptedList.list=combinedList["acceptedList"]
-    rejectedList.list=combinedList["rejectedList"]
-    invalidList.list=combinedList["invalidList"]
-
-    return [acceptedList,rejectedList,invalidList]
-
-
-#Remove invalid resumes and resumes that scored 0.0
-def filter_resume_online_func(resume_list):
-    #Copies the data
-    resume_list_copy=copy.deepcopy(resume_list)
-    #to allocate stringname
-    combinedList=combined_list_func()
+    overallList.list_overall=acceptedList
+    overallList.list_overall=rejectedList
+    overallList.list_overall=invalidList
+    print(overallList.list_overall)
+    #creates resume or profile(for offline mode) OCP
     for raw_resume in resume_list_copy:
-        #create a resume
-        resume= Resume(raw_resume)
-        #Decide which list to put the resume in
-        resumeEvaluate=ResumeEvaluator(resume)
-        #the return value + "List"
-        stringname=str(resumeEvaluate.category())+"List"
+      resume=object_type(raw_resume)
+      ResumeEvaluator.allocate(overallList,resume)
+
         
-        combinedList[stringname].append(resume)
-    #creating classes
-    return create_classes(combinedList)
+    return overallList.list_overall[0],overallList.list_overall[1],overallList.list_overall[2]
 
-def filter_resume_offline_func(resume_list):
-    #Copies the data
-    resume_list_copy=copy.deepcopy(resume_list)
-    combinedList=combined_list_func()
-    for raw_resume in resume_list_copy:
-        #Create a profile(offline resume)
-        profile=Profile(raw_resume)
-        #Decide which list to put the resume in
-        profileEvaluate=ResumeEvaluator(profile)
-        stringname=str(profileEvaluate.category())+"List"
-        combinedList[stringname].append(profile)
-    return create_classes(combinedList)
+
+
 
 '''def filter_resume_func(resume_list,mode):
     function_name=f"filter_resume_{mode}_func"
     function_name.__name__'''
-
-
-def offline_screening_func(resume_list, rules):
-    for resume in resume_list:
-        resume_text = resume.get("text", "").lower()
-        matched_count = 0
-        total_rules = len(rules)
-
-        for rule in rules:
-            rule_text = rule.get("text", "").lower()
-            words = [w for w in rule_text.split() if len(w) > 3]
-            if words and any(word in resume_text for word in words):
-                matched_count += 1
-
-        if matched_count > 0:
-            resume["outcome"] = "scored"
-            resume["score"] = round((matched_count / total_rules) * 100.0, 1)
-            resume["reason"] = f"Matched {matched_count} out of {total_rules} rules"
-        else:
-            resume["outcome"] = "scored"
-            resume["score"] = 0.0
-            resume["reason"] = "No rules matched"
-    return resume_list
 
 
 def validateOfflineFile(results_path):

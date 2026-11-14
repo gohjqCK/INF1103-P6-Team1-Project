@@ -1,14 +1,14 @@
 class OverallList:
     def __init__(self):
-        self.__filtered_list=[]
+        self._filtered_list=[]
     
     @property
-    def list_overall(self):
-        return self.__filtered_list
+    def list_overall(self) -> list[object]:
+        return self._filtered_list
 
     @list_overall.setter
     def list_overall(self,item):
-        self.__filtered_list.append(item)
+        self._filtered_list.append(item)
 
 
 

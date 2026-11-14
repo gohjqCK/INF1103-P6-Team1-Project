@@ -1,39 +1,22 @@
 from Logic_manager_modules.FilteredList import FilteredList
-from Logic_manager_modules.Output_dict import Output_dict
 from Logic_manager_modules.Sort_score import Sort_score
-from Logic_manager_modules.Profile import Profile
-from Logic_manager_modules.Resume import Resume
+from Logic_manager_modules.OfflineResume import OfflineResume
+from Logic_manager_modules.OnlineResume import OnlineResume
 #Format is accepted: [profile1],[profile2]
-class AcceptedList(FilteredList,Output_dict,Sort_score):
-    def __init__(self):
-        super().__init__()
+class AcceptedList(FilteredList,Sort_score):
+  def __init__(self):
+    super().__init__()
 
-    @property
-    def show_profiles(self):
-        profile_list=[]
-        for profile in self.__resume_list:
-            profile_contents=profile.get_profile
-            profile_list.append(profile_contents)
-        return profile_list
+  #Abstract method
+  @property
+  def output_dict(self) -> dict:
+    return {"accepted":self.get_list_resume_dict}
 
-    @property
-    def list(self):
-        return self.__resume_list
-    
-    @list.setter
-    def list(self,resume):
-        self.__resume_list=resume
-
-    #Abstract method
-    @property
-    def output_dict(self):
-        return {"accepted":self.list_to_profile}
-
-    @property
-    def sort_score(self):
-        self.list.sort(key=lambda res: res.get_score, reverse=True)
-        #sort_list= sorted(self.list, )
-        return self.list_to_profile
+  @property
+  def sort_score(self) -> list[dict]:
+    self.list.sort(key=lambda res: res.get_score, reverse=True)
+    #sort_list= sorted(self.list, )
+    return self.get_list_resume_dict
 
 ##Test data
 
