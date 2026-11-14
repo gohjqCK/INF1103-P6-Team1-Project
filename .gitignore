@@ -11,4 +11,12 @@ __pycache__/
 companies/
 companies.json
 
+# Ignore generated runtime/test JSON outputs
+output/
+ai_output.json
+resumes.json
+results.json
+summary.json
+Business_Rules.json
+
 .env
