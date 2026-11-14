@@ -1,9 +1,9 @@
 import json
-import os
+import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
- 
+from typing import Any, Callable, Dict, List, Optional
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -12,7 +12,7 @@ except ImportError:
 
 _IMPORT_ERRORS: Dict[str, Exception] = {}
 
-#AI Manager Imports
+# AI Manager
 try:
     from ai_manager_modules.ai_manager import AIManager
     from ai_manager_modules.ai_manager_ollama_client import OllamaClient
@@ -21,29 +21,22 @@ except Exception as err:
     OllamaClient = None
     _IMPORT_ERRORS["AI Manager"] = err
 
-##Data Manager Imports
-try:
-    from pypdf import PdfReader
-    from data_manager_modules.data_manager_resume import Resume as ParsedResume
-except Exception as err:
-    PdfReader = None
-    ParsedResume = None
-    _IMPORT_ERRORS["Data Manager (PDF parsing)"] = err
+# Data Manager (local-folder parser, used when the caller sends no resumes)
 try:
     from data_manager_modules.ResumeFolderParser import ResumeFolderParser
 except Exception as err:
     ResumeFolderParser = None
     _IMPORT_ERRORS["Data Manager (PDF parsing)"] = err
 
-##Logic Manager imports
+# Logic Manager
 try:
-    from Logic_manager_modules import Logic_Manager as Logic_Manager_Module
-    from Logic_manager_modules.Profile import Profile
-    from Logic_manager_modules.ResumeEvaluator import ResumeEvaluator
+    from Logic_manager_modules import Logic_Manager as LogicManager
+    from Logic_manager_modules.OnlineResume import OnlineResume
+    from Logic_manager_modules.OfflineResume import OfflineResume
 except Exception as err:
-    Logic_Manager_Module = None
-    Profile = None
-    ResumeEvaluator = None
+    LogicManager = None
+    OnlineResume = None
+    OfflineResume = None
     _IMPORT_ERRORS["Logic Manager"] = err
 try:
     from Logic_manager_modules.OverviewReport import LogicReportGenerator
@@ -51,12 +44,16 @@ except Exception as err:
     LogicReportGenerator = None
     _IMPORT_ERRORS["Overview Report"] = err
 
+Notify = Callable[[str], None]
+
+
 class MainProg:
+    """Coordinates AI, Data and Logic managers. TelegramIOManager calls run()."""
 
     def __init__(self, output_dir: str = "output"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
- 
+
         for label, err in _IMPORT_ERRORS.items():
             print(f"  [!] {label} failed to import: {type(err).__name__}: {err}")
 
@@ -66,13 +63,11 @@ class MainProg:
                 self.ai_manager = AIManager(OllamaClient())
             except Exception as err:
                 print(f"  [!] Could not create the AI Manager: {type(err).__name__}: {err}")
- 
-        self.report_generator = (LogicReportGenerator(str(self.output_dir)) if LogicReportGenerator else None)
 
+        self.report_generator = LogicReportGenerator(str(self.output_dir)) if LogicReportGenerator else None
         self.resume_parser = ResumeFolderParser() if ResumeFolderParser else None
 
     def check_ai_connection(self) -> bool:
-
         if self.ai_manager is None:
             return False
         try:
@@ -80,59 +75,119 @@ class MainProg:
         except Exception:
             return False
 
-    def run(self, employer_inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    # ------------------------------------------------------------------ pipeline
+    def run(self, employer_inputs: Dict[str, Any],
+            progress_callback: Optional[Notify] = None) -> Dict[str, Any]:
+        """Returns {"ranked_candidates", "summary_data", "filtered_resumes"} (what the Telegram bot saves)."""
+        notify: Notify = progress_callback or (lambda text: None)
         rules = [dict(rule) for rule in employer_inputs.get("business_rules", [])]
-        pdf_directory = employer_inputs.get("pdf_directory", "resumes")
- 
-        print(f"\n[Pipeline] Starting screening for: '{pdf_directory}' with {len(rules)} rule(s)...")
- 
-        # Stage 1: Keywords (AI only)
-        ai_online = self.check_ai_connection()
-        if ai_online:
-            print("  [AI] Ollama online - generating rule keywords.")
-            rules = self.ai_manager.add_keywords(rules)
- 
-        # Stage 2: Parse Resumes
-        parsed_resumes = self.resume_parser.parse(pdf_directory) if self.resume_parser else []
-        if not parsed_resumes:
-            print("[Pipeline] No resumes could be read.\n")
-            return []
- 
-        # Stage 3: Screen Candidates (AI if Ollama is ready, otherwise offline fallback)
-        if ai_online:
-            print("  [AI] Using AI screening.")
-            results = self.ai_manager.screen_resumes(rules, parsed_resumes)
-        else:
-            print(f"  [AI] Ollama unavailable - using offline screening.")
-            valid = [r for r in parsed_resumes if r.get("status") == "valid"]
-            invalid = [r for r in parsed_resumes if r.get("status") != "valid"]
-            results = Logic_Manager_Module.offline_screening_func(valid, rules) if Logic_Manager_Module else valid
-            for entry in invalid:
-                entry["outcome"] = "invalid"
-                entry["score"] = None
-            results = results + invalid
- 
-        # Stage 4: Filter and Sort (save everything, then rank accepted candidates)
+        top_n = employer_inputs.get("top_n") or 3
+
+        # Stage 1: get the resumes (sent by the bot, else read from a local folder)
+        resumes = self._load_resumes(employer_inputs)
+        print(f"\n[Pipeline] Screening {len(resumes)} resume(s) against {len(rules)} rule(s)...")
+        if not resumes:
+            notify("No resumes could be read.")
+            return self._package([], [], [], None)
+
+        # Stage 2: screen (AI if Ollama is ready, otherwise offline fallback)
+        results, ai_used = None, False
+        if self.check_ai_connection():
+            try:
+                notify("AI online - generating rule keywords...")
+                rules = self.ai_manager.add_keywords(rules)
+                results = self._screen_with_ai(rules, resumes, notify)
+                ai_used = True
+            except Exception as err:
+                print(f"  [!] AI screening failed ({type(err).__name__}: {err}) - using offline screening.")
+                notify("AI failed - switching to offline screening...")
+                rules = [dict(rule) for rule in employer_inputs.get("business_rules", [])]
+        if results is None:
+            notify("Using offline screening...")
+            results = self._screen_offline(rules, resumes)
+
+        # Stage 3: Logic Manager sorts results into accepted / rejected / invalid
+        notify("Filtering and ranking candidates...")
+        accepted, rejected, invalid = self._categorise(results, ai_used)
+        accepted.sort(key=lambda c: c.get("score") or 0, reverse=True)
+
+        # Stage 4: AI summary (needs the AI's per-rule fields, so AI mode only)
+        summary_data = None
+        if ai_used:
+            try:
+                notify("Writing summary report...")
+                summary_data = self.ai_manager.create_summary(rules, results, top_n)
+            except Exception as err:
+                print(f"  [!] Could not create the summary: {err}")
+
         self._save_results(results)
-        ranked = [r for r in results if self._category(r) == "accepted"]
-        ranked.sort(key=lambda c: c.get("score") or 0, reverse=True)
- 
-        print(f"[Pipeline Complete] Returned {len(ranked)} ranked candidate(s).\n")
-        return ranked
+        print(f"[Pipeline Complete] {len(accepted)} accepted, {len(rejected)} rejected, {len(invalid)} invalid.\n")
+        return self._package(accepted, rejected, invalid, summary_data)
+
+    # ------------------------------------------------------------------ stages
+    def _load_resumes(self, employer_inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        sent = employer_inputs.get("resumes")
+        if sent:
+            return [dict(r) for r in sent]
+        if self.resume_parser is None:
+            return []
+        return self.resume_parser.parse(employer_inputs.get("pdf_directory", "resumes"))
+
+    def _screen_with_ai(self, rules, resumes, notify: Notify) -> List[Dict[str, Any]]:
+        total, done, lock = len(resumes), [0], threading.Lock()
+
+        def on_result(entry: Dict[str, Any]) -> None:
+            with lock:
+                done[0] += 1
+                notify(f"AI screened {done[0]}/{total} resume(s)...")
+
+        return self.ai_manager.screen_resumes(rules, resumes, on_result=on_result)
 
     @staticmethod
-    def _category(entry: Dict[str, Any]) -> str:
-        """accepted / rejected (score 0) / invalid, decided by the Logic Manager's ResumeEvaluator."""
-        if Profile is not None and ResumeEvaluator is not None:
-            profile = Profile({
-                "file": entry.get("file", ""),
-                "outcome": entry.get("outcome", ""),
-                "reason": entry.get("reason", ""),
-                "score": entry.get("score"),
-            })
-            return ResumeEvaluator(profile).category()
-        return "accepted" if entry.get("outcome") == "scored" and entry.get("score") else "invalid"
- 
+    def _screen_offline(rules, resumes) -> List[Dict[str, Any]]:
+        if LogicManager is None:
+            raise RuntimeError("Logic Manager is unavailable, so offline screening can't run.")
+        valid = [r for r in resumes if r.get("status") == "valid"]
+        invalid = [r for r in resumes if r.get("status") != "valid"]
+        scored = LogicManager.offline_screening_func(valid, rules)
+        for entry in invalid:
+            entry["outcome"] = "invalid"
+            entry["score"] = None
+            entry.setdefault("reason", "")
+        return scored + invalid
+
+    @staticmethod
+    def _categorise(results: List[Dict[str, Any]], ai_used: bool):
+        """Uses Logic_Manager.filter_resume_func, then maps the result objects back to the full dicts."""
+        if LogicManager is None:
+            raise RuntimeError("Logic Manager is unavailable.")
+        resume_type = OnlineResume if ai_used else OfflineResume
+        acc_list, rej_list, inv_list = LogicManager.filter_resume_func(results, resume_type)
+
+        label_by_file: Dict[str, str] = {}
+        for label, lst in (("accepted", acc_list), ("rejected", rej_list), ("invalid", inv_list)):
+            for resume in lst.list:
+                label_by_file[resume.get_file] = label
+
+        buckets: Dict[str, List[Dict[str, Any]]] = {"accepted": [], "rejected": [], "invalid": []}
+        for entry in results:
+            label = label_by_file.get(entry.get("file"), "invalid")
+            # ResumeEvaluator.allocate only treats "scored with 0.0" as rejected, so the
+            # AI's knockout rejections (outcome == "rejected") would land in invalid.
+            if entry.get("outcome") == "rejected":
+                label = "rejected"
+            buckets[label].append({k: v for k, v in entry.items() if k != "text"})
+        return buckets["accepted"], buckets["rejected"], buckets["invalid"]
+
+    # ------------------------------------------------------------------ output
+    @staticmethod
+    def _package(accepted, rejected, invalid, summary_data) -> Dict[str, Any]:
+        return {
+            "ranked_candidates": accepted,
+            "summary_data": summary_data,
+            "filtered_resumes": {"accepted": accepted, "rejected": rejected, "invalid": invalid},
+        }
+
     def _save_results(self, results: List[Dict[str, Any]]) -> None:
         stamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         path = self.output_dir / f"screening_results_{stamp}.json"
@@ -141,9 +196,9 @@ class MainProg:
                 json.dump(results, f, indent=2, ensure_ascii=False, default=str)
         except Exception as err:
             print(f"  [!] Could not save results: {err}")
- 
-    def generate_overview_report(self, candidates: List[Dict[str, Any]]) -> Path:
-        """Called by main.py after a run."""
+
+    def generate_overview_report(self, summary_data: Dict[str, Any]) -> Path:
+        """The report generator now reads the AI summary dict (AI mode only)."""
         if self.report_generator is None:
             raise RuntimeError("Overview report generator is unavailable.")
-        return self.report_generator.generate_overview_report(candidates)
+        return self.report_generator.generate_overview_report(summary_data)
