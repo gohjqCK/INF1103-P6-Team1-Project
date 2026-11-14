@@ -45,7 +45,7 @@ class DataManager:
             print(f"No records found in 'resume_files' table for company ID {company_id}.")
             return []
 
-        processed_resumes: List[Resume] = []
+        processed_resumes: List[Tuple[Optional[int], Resume]] = []
         for record in db_files:
             filename = record["file_name"]
             parsed_text = record.get("parsed_text") or record.get("text", "")
@@ -65,18 +65,26 @@ class DataManager:
                 pdf_url = record.get("pdf_url")
                 resume_obj = self.parser.parse_from_url(filename, pdf_url)
 
-            processed_resumes.append(resume_obj)
+            processed_resumes.append((record.get("id"), resume_obj))
 
-        valid_resumes = sorted(
-            [r for r in processed_resumes if r.status == "valid"], key=lambda x: x.file_name
+        valid_pairs = sorted(
+            [(rid, r) for rid, r in processed_resumes if r.status == "valid"],
+            key=lambda item: item[1].file_name,
         )
-        invalid_resumes = sorted(
-            [r for r in processed_resumes if r.status == "invalid"], key=lambda x: x.file_name
+        invalid_pairs = sorted(
+            [(rid, r) for rid, r in processed_resumes if r.status == "invalid"],
+            key=lambda item: item[1].file_name,
         )
-        ordered_resumes = valid_resumes + invalid_resumes
+        ordered_pairs = valid_pairs + invalid_pairs
+        ordered_resumes = [r for _, r in ordered_pairs]
 
         self.save_resumes_to_json(ordered_resumes, output_file)
-        return [r.to_dict() for r in ordered_resumes]
+        result_dicts: List[Dict[str, Any]] = []
+        for rid, resume_obj in ordered_pairs:
+            d = resume_obj.to_dict()
+            d["id"] = rid
+            result_dicts.append(d)
+        return result_dicts
 
     @staticmethod
     def save_resumes_to_json(resumes: List[Resume], output_file: str) -> List[Dict[str, Any]]:

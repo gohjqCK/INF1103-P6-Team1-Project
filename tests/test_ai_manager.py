@@ -11,6 +11,13 @@ RULES = [
     {"text": "Cisco", "priority": "nice", "keywords": ["cisco"]},
     {"text": "criminal record", "priority": "reject", "keywords": ["criminal"]},
 ]
+SUMMARY_REPORT = {
+    "totals": {"processed": 2, "scored": 1, "rejected": 0, "invalid": 1},
+    "rule_statistics": [
+        {"rule": "Python", "priority": "must", "met": 1, "missed": 0, "percent_met": 100.0},
+    ],
+    "top_candidates": [{"name": "Ada", "file": "a.pdf", "score": 66.7}],
+}
 
 
 def make_resume(name, text):
@@ -128,29 +135,23 @@ class TestAIManager(unittest.TestCase):
         results = AIManager(client).screen_resumes(RULES, [make_resume("a.pdf", "Ada has a criminal record")])
         self.assertEqual(results[0]["rejected_by"], ["criminal record"])
 
-    def test_create_summary_combines_numbers_and_ai_text(self):
-        client = FakeLLMClient(reply=self._resume_reply())
-        results = AIManager(client).screen_resumes(RULES, [make_resume("a.pdf", "Knows Python")])
-        client = FakeLLMClient(reply={"overall_summary": "One applicant matched."})
-        report = AIManager(client).create_summary(RULES, results)
-        self.assertTrue(report["overall_summary"].endswith("One applicant matched."))
-        self.assertEqual(report["totals"]["scored"], 1)
-        self.assertEqual(report["run_info"]["model"], "fake-model")
+    def test_write_summary_returns_counts_and_ai_text(self):
+        client = FakeLLMClient(reply={"overall_summary": "Ada scored 66.7 out of 100."})
+        summary = AIManager(client).write_summary(SUMMARY_REPORT)
+        self.assertTrue(summary.startswith("Resumes received: 2."))
+        self.assertTrue(summary.endswith("Ada scored 66.7 out of 100."))
 
-    def test_create_summary_keeps_numbers_when_the_ai_fails(self):
-        client = FakeLLMClient(reply=self._resume_reply())
-        results = AIManager(client).screen_resumes(RULES, [make_resume("a.pdf", "Knows Python")])
-        report = AIManager(FakeLLMClient()).create_summary(RULES, results)
-        self.assertEqual(report["overall_summary"], "")
-        self.assertEqual(report["rule_statistics"][0]["met"], 1)
+    def test_write_summary_is_empty_when_the_ai_fails(self):
+        self.assertEqual(AIManager(FakeLLMClient()).write_summary(SUMMARY_REPORT), "")
 
-    def test_create_summary_skips_the_ai_when_nothing_was_checked(self):
+    def test_write_summary_skips_the_ai_when_nothing_was_checked(self):
         client = FakeLLMClient(reply={"overall_summary": "Should not be used."})
-        invalid = {"file": "x.pdf", "outcome": "invalid", "reason": "No text"}
-        report = AIManager(client).create_summary(RULES, [invalid])
-        self.assertEqual(report["overall_summary"], "")
+        report = {**SUMMARY_REPORT, "totals": {"processed": 1, "scored": 0, "rejected": 0, "invalid": 1}}
+        self.assertEqual(AIManager(client).write_summary(report), "")
         self.assertEqual(client.prompts_received, [])
 
+    def test_model_name_comes_from_the_client(self):
+        self.assertEqual(AIManager(FakeLLMClient()).model_name, "fake-model")
 
     def test_on_result_is_called_for_every_resume(self):
         client = FakeLLMClient(reply=self._resume_reply())
@@ -158,6 +159,17 @@ class TestAIManager(unittest.TestCase):
         resumes = [make_resume("a.pdf", "x"), make_resume("b.pdf", "y")]
         AIManager(client).screen_resumes(RULES, resumes, on_result=lambda entry: seen.append(entry["file"]))
         self.assertEqual(sorted(seen), ["a.pdf", "b.pdf"])
+
+    def test_results_keep_the_resume_id(self):
+        client = FakeLLMClient(reply=self._resume_reply())
+        scored = make_resume("a.pdf", "Ada knows Python")
+        scored["id"] = 7
+        invalid = {"id": 8, "file": "scan.pdf", "status": "invalid", "reason": "No readable text", "text": ""}
+
+        results = AIManager(client).screen_resumes(RULES, [scored, invalid])
+
+        ids = {entry["file"]: entry["id"] for entry in results}
+        self.assertEqual(ids, {"a.pdf": 7, "scan.pdf": 8})
 
 
 if __name__ == "__main__":

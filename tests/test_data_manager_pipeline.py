@@ -69,6 +69,22 @@ class TestDataManagerPipeline(unittest.TestCase):
         self.dm.process_all_resumes(company_id=42)
         self.dm.db_handler.fetch_resume_files.assert_called_once_with(company_id=42)
 
+    def test_resume_id_is_passed_through(self):
+        """Ensures each resume dict keeps its database row id."""
+        mock_records = [
+            {
+                "id": 7,
+                "file_name": "resume1.pdf",
+                "parsed_text": "A" * 300,
+                "pages": 1,
+                "status": "valid",
+                "invalid_reason": "",
+            }
+        ]
+        self.dm.db_handler.fetch_resume_files.return_value = mock_records
+        res = self.dm.process_all_resumes(company_id=101)
+
+        self.assertEqual(res[0]["id"], 7)
 
 if __name__ == "__main__":
     unittest.main()
