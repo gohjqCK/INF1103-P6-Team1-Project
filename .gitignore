@@ -1,7 +1,7 @@
 # Python virtual environment - each teammate creates their own (see command.txt)
 .venv/
 venv/
-
+.venv-1
 # Python cache files
 __pycache__/
 *.pyc

@@ -89,23 +89,16 @@ def validate_resume_keys_func(resume_list):
 #
 def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredList]:
     resume_list_copy=copy.deepcopy(resume_list)
-
+    #crates overallList object
     overallList=OverallList()
-    #creates accepted, rejected and invalid list and append all to Overall list
-    acceptedList=AcceptedList()
-    rejectedList=RejectedList()
-    invalidList=InvalidList()
-    overallList.list_overall=acceptedList
-    overallList.list_overall=rejectedList
-    overallList.list_overall=invalidList
-    print(overallList.list_overall)
+
     #creates resume or profile(for offline mode) OCP
     for raw_resume in resume_list_copy:
       resume=object_type(raw_resume)
-      ResumeEvaluator.allocate(overallList,resume)
-
-        
-    return overallList.list_overall[0],overallList.list_overall[1],overallList.list_overall[2]
+      category=ResumeEvaluator.evaluate(resume)
+      print(category)
+      overallList.add(resume,category) 
+    return overallList.get_accepted_list,overallList.get_rejected_list,overallList.get_invalid_list
 
 
 
