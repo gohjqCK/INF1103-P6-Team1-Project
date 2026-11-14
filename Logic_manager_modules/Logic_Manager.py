@@ -96,7 +96,6 @@ def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredLis
     for raw_resume in resume_list_copy:
       resume=object_type(raw_resume)
       category=ResumeEvaluator.evaluate(resume)
-      print(category)
       overallList.add(resume,category) 
     return overallList.get_accepted_list,overallList.get_rejected_list,overallList.get_invalid_list
 
