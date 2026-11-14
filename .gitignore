@@ -5,5 +5,7 @@ venv/
 # Python cache files
 __pycache__/
 *.pyc
+.env/
+
 
 # Ignore PDF files so it is not uploaded to github

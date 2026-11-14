@@ -1,5 +1,32 @@
 [
   {
+    "file": "Casey-Nakamura-System-Administrator-Resume (TechieCV.com).pdf",
+    "name": "Casey Nakamura",
+    "email": "sysadmin@gmail.com",
+    "phone": "+1 3035-2222",
+    "outcome": "scored",
+    "score": 42.9,
+    "reason": "Meets 1/2 rules. Missing: cloud (Ignored 1 unverified claims).",
+    "summary": "System Administrator with 8 years of experience in enterprise IT environments, specializing in Linux and Windows administration, virtualization, and security hardening.",
+    "skills": [
+      "Bash",
+      "PowerShell",
+      "Python",
+      "Perl"
+    ],
+    "qualifications": [
+      "B.S. in Information Technology from University of Colorado Boulder"
+    ],
+    "work_experience": [
+      "Senior Systems Administrator at Lockheed Martin Space",
+      "Systems Administrator at Charter Communications"
+    ],
+    "projects": [
+      "Centralized monitoring on Datadog and Nagios",
+      "Enterprise backup and disaster recovery program on Veeam and Commvault"
+    ]
+  },
+  {
     "file": "Adriana-Rosario-IT-Manager-Resume (TechieCV.com).pdf",
     "name": "Adriana Rosario",
     "email": "itmanager@gmail.com",
@@ -43,35 +70,8 @@
     ]
   },
   {
-    "file": "Casey-Nakamura-System-Administrator-Resume (TechieCV.com).pdf",
-    "name": "Casey Nakamura",
-    "email": "sysadmin@gmail.com",
-    "phone": "+1 3035-2222",
-    "outcome": "scored",
-    "score": 42.9,
-    "reason": "Meets 1/2 rules. Missing: cloud (Ignored 1 unverified claims).",
-    "summary": "System Administrator with 8 years of experience in enterprise IT environments, specializing in Linux and Windows administration, virtualization, and security hardening.",
-    "skills": [
-      "Bash",
-      "PowerShell",
-      "Python",
-      "Perl"
-    ],
-    "qualifications": [
-      "B.S. in Information Technology from University of Colorado Boulder"
-    ],
-    "work_experience": [
-      "Senior Systems Administrator at Lockheed Martin Space",
-      "Systems Administrator at Charter Communications"
-    ],
-    "projects": [
-      "Centralized monitoring on Datadog and Nagios",
-      "Enterprise backup and disaster recovery program on Veeam and Commvault"
-    ]
-  },
-  {
     "file": "Assistant IT Manager Resume.pdf",
-    "name": "JOHN H. SMITH",
+    "name": "John H. Smith",
     "email": "info@greatresumesfast.com",
     "phone": "800.991.5187",
     "outcome": "scored",
@@ -83,13 +83,18 @@
       "Strategic Planning",
       "Business Process Design",
       "IT Infrastructure & Standardization",
+      "Strategic Planning & Tactical Execution",
+      "Business Transformation Solutions",
+      "Business Continuity & Systems Security",
+      "Large-Scale Project Management",
+      "Budget Management & Cost Containment",
       "Risk Management & Risk Mitigation",
       "Leadership & Performance Enhancement",
       "Analytical Problem Solving Abilities",
       "Team Collaboration, Coaching, & Motivation"
     ],
     "qualifications": [
-      "Bachelor of Business Administration —Management Information systems; State University, Waikiki, Hawaii",
+      "Bachelor of Business Administration — Management Information systems; State University, Waikiki, Hawaii",
       "Information Technology Infrastructure Library (ITIL) Foundations certification",
       "Member, Project Management Institute (PMI), USA",
       "PMP Training (Project Management Professional), Tech-Pro Consulting Ltd, Japan"
@@ -103,11 +108,12 @@
       "REGIONAL PROJECT MANAGER/REGIONAL IS/IT MANAGER —Asia Pacific, Resource Asia Pacific Ltd., Japan, China (1990—2000)"
     ],
     "projects": [
-      "Led and implemented complex projects and Global teams —mitigated risks, managed requirements, and worked with project stakeholders while managing expectations at the department and project levels.",
+      "Led and implemented complex projects and Global teams — mitigated risks, managed requirements, and worked with project stakeholders while managing expectations at the department and project levels.",
       "Directed the relocation of a regional data center and company regional office from Japan to Thailand; devised startup planning and managed operations within given resources, time, and budget.",
       "Managed global teams including up to 10 direct and indirect reports; developed staffing plans, managed workloads, defined deliverables, hired resources, conducted performance reviews, and ensured compliance with established company policies.",
-      "Managed a cross-functional team of 10 members. Designed and developed IT strategy to support a Regional user base of more than 1,500 users throughout Japan, Beijing, Shanghai, Hong Kong, Australia, and India.",
-      "Led a team of 45 Level I and Level II help desk support team members providing outstanding quality IT services to 10 countries throughout Asia Pacific and serving a user base of more than 2,000."
+      "Managed a virtual support team for level II support—provided Regional support and substantial cost-savings.",
+      "Led a team of 45 Level I and Level II help desk support team members providing outstanding quality IT services to 10 countries throughout Asia Pacific and serving a user base of more than 2,000.",
+      "Directed critical, time-sensitive Windows upgrade project to support Airline Information Systems—integrated 40 offices in the Asia Pacific region within budget in only 8 months."
     ]
   },
   {
@@ -136,12 +142,13 @@
       "B.S. in Information Technology from Arizona State University"
     ],
     "work_experience": [
-      "Senior IT Support Specialist at Carvana, managing end-user support for 3,200+ employees, leading ticket triage, endpoint deployment, and identity and access support.",
-      "IT Support Specialist at GoDaddy, handling 65 to 90 tickets per week, deploying software and patches, and managing end-user security workflows."
+      "Senior IT Support Specialist at Carvana, Tempe, AZ (Sep 2022 - Present)",
+      "IT Support Specialist at GoDaddy, Tempe, AZ (Aug 2019 - Aug 2022)"
     ],
     "projects": [
-      "Built the team's service-desk knowledge base in ServiceNow, authoring and maintaining 220+ KB articles.",
-      "Led hardware refresh and peripheral support for 1,150 laptops and monitors, achieving 99.4% inventory accuracy at quarterly audit."
+      "Built the team's service-desk knowledge base in ServiceNow",
+      "Managed account lifecycle and access provisioning for 3,200+ user accounts",
+      "Led hardware refresh and peripheral support for 1,150 laptops and monitors"
     ]
   },
   {
@@ -152,7 +159,7 @@
     "outcome": "scored",
     "score": 0.0,
     "reason": "Meets 0/2 rules. Missing: cloud; Python",
-    "summary": "Practical digital support candidate with experience in IT systems, digital communication, and workplace support, including file organization and basic documentation.",
+    "summary": "Organised and practical digital support candidate with experience in IT systems, digital communication, and workplace support.",
     "skills": [
       "IT support",
       "Helpdesk assistance",
@@ -192,25 +199,18 @@
     "reason": "Meets all rules.",
     "summary": "Ada Lovelace is a recent Computer Science graduate with experience in software development and teaching. She has a strong background in Python and has worked on projects involving cloud computing and AI tools.",
     "skills": [
-      "Python (Pandas, Matplotlib, Plotly, pytest)",
-      "Java",
-      "JavaScript",
-      "C",
-      "Swift",
-      "TypeScript"
+      "Python (Pandas, Matplotlib, Plotly, pytest)"
     ],
     "qualifications": [
-      "B.S. in Computer Science, University of North Carolina at Chapel Hill, GPA: 3.7/4.0",
-      "Dean’s List, Honors Carolina"
+      "B.S. in Computer Science, University of North Carolina at Chapel Hill"
     ],
     "work_experience": [
-      "Software Development Engineer Intern, Amazon, Seattle, WA (June 2026 - Present)",
-      "Undergraduate Teaching Assistant - Grading Lead, UNC-Chapel Hill Department of Computer Science, Chapel Hill, NC (Aug. 2025 - May 2026)",
-      "Software Engineering Intern, Fidelity Investments, Durham, NC (May 2025 - Aug. 2025)"
+      "Software Development Engineer Intern, Amazon",
+      "Undergraduate Teaching Assistant - Grading Lead, UNC-Chapel Hill Department of Computer Science",
+      "Software Engineering Intern, Fidelity Investments"
     ],
     "projects": [
-      "MusicBoxd, HackNC (Oct. 2025)",
-      "CATCH Project Manager, UNC CS for Social Good (Jan. 2025 - Present)"
+      "MusicBoxd, HackNC, Oct. 2025"
     ]
   },
   {

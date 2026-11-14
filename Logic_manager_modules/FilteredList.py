@@ -10,9 +10,10 @@ class FilteredList(ABC):
     def get_list_resume_dict(self) -> list[dict]:
         profile_list=[]
         for profile in self.__resume_list:
+            print(profile)
             profile_contents=profile.get_resume
             profile_list.append(profile_contents)
-            return profile_list
+        return profile_list
 
     #prints list
     @property
