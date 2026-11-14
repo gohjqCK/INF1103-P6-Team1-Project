@@ -7,13 +7,12 @@ from ai_manager_modules.ai_manager_llm_client import LLMClient
 from ai_manager_modules.ai_manager_llm_error import LLMError
 from ai_manager_modules.ai_manager_resume_scorer import ResumeScorer
 from ai_manager_modules.ai_manager_screening_task import ScreeningTask
-from Logic_manager_modules.SummaryBuilder import SummaryBuilder
 from ai_manager_modules.ai_manager_summary_task import SummaryTask
 
 
 class AIManager:
-    """Checks the connection, adds keywords to rules, and screens and scores resumes."""
-
+    """Checks the connection, adds keywords to rules, screens and scores resumes, and writes the summary text."""
+    
     def __init__(self, client: LLMClient, max_workers: int = 4):
         self._client = client
         self._max_workers = max_workers
@@ -55,16 +54,22 @@ class AIManager:
                     ordered.append(entry)
         return ordered
 
-    def create_summary(self, rules: list[dict], results: list[dict], top_n: int = 3) -> dict:
-        """Returns the summary report. If the AI fails, the report keeps its numbers and overall_summary stays empty."""
-        report = SummaryBuilder(rules, self._client.model_name, top_n).build(results)
+    @property
+    def model_name(self) -> str:
+        """The AI model's name, so Logic Manager can record it in the report."""
+        return self._client.model_name
+
+    def write_summary(self, report: dict) -> str:
+        """Returns the AI-written summary of a report built by Logic Manager.
+        Returns "" if no resumes were checked or the AI fails, so the report keeps its numbers.
+        """
         checked = report["totals"]["scored"] + report["totals"]["rejected"]
-        if checked > 0:
-            try:
-                report["overall_summary"] = self._summary_task.run(report)
-            except LLMError:
-                pass
-        return report
+        if checked == 0:
+            return ""
+        try:
+            return self._summary_task.run(report)
+        except LLMError:
+            return ""
 
 
     def _screen_one(self, task: ScreeningTask, scorer: ResumeScorer, resume: dict) -> dict:
