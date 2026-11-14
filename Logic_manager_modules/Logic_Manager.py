@@ -107,34 +107,10 @@ def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredLis
     return overallList.list_overall[0],overallList.list_overall[1],overallList.list_overall[2]
 
 
-
-
 '''def filter_resume_func(resume_list,mode):
     function_name=f"filter_resume_{mode}_func"
     function_name.__name__'''
 
-
-def offline_screening_func(resume_list, rules):
-    for resume in resume_list:
-        resume_text = resume.get("text", "").lower()
-        matched_count = 0
-        total_rules = len(rules)
-
-        for rule in rules:
-            rule_text = rule.get("text", "").lower()
-            words = [w for w in rule_text.split() if len(w) > 3]
-            if words and any(word in resume_text for word in words):
-                matched_count += 1
-
-        if matched_count > 0:
-            resume["outcome"] = "scored"
-            resume["score"] = round((matched_count / total_rules) * 100.0, 1)
-            resume["reason"] = f"Matched {matched_count} out of {total_rules} rules"
-        else:
-            resume["outcome"] = "scored"
-            resume["score"] = 0.0
-            resume["reason"] = "No rules matched"
-    return resume_list
 
 
 def validateOfflineFile(results_path):
