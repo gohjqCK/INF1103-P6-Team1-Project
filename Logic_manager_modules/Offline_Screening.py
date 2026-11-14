@@ -235,4 +235,21 @@ def offline_screening_func(resume_list, rules):
         resume.setdefault("name", _guess_name(text))
         resume.setdefault("email", _find_email(text))
         resume.setdefault("phone", _find_phone(text))
+        if not resume.get("summary"):
+            if rejected_by:
+                fallback_summary = "Disqualified by knockout rule: " + "; ".join(rejected_by) + "."
+            elif met:
+                fallback_summary = (
+                    f"Offline screening matched {len(met)}/{len(met) + len(missed)} rule(s): "
+                    + ", ".join(met)
+                    + "."
+                )
+            else:
+                snippet = " ".join(line.strip() for line in text.splitlines()[:3] if line.strip())
+                fallback_summary = snippet[:220] or "Evaluated via offline keyword matching."
+            resume["summary"] = fallback_summary
+        resume.setdefault("skills", list(met))
+        resume.setdefault("qualifications", [])
+        resume.setdefault("work_experience", [])
+        resume.setdefault("projects", [])
     return resume_list

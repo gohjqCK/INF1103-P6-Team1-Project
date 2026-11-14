@@ -116,16 +116,18 @@ class MainProg:
         accepted, rejected, invalid = self._categorise(results, ai_used)
         accepted.sort(key=lambda c: c.get("score") or 0, reverse=True)
 
-        # Stage 4: AI summary (needs the AI's per-rule fields, so AI mode only)
+        # Stage 4: Summary report (AI narrative if online, deterministic fallback if empty/offline)
         summary_data = None
-        if ai_used:
+        if SummaryBuilder is not None:
             try:
                 notify("Writing summary report...")
-                if SummaryBuilder is None:
-                    raise RuntimeError("SummaryBuilder is unavailable.")
-                builder = SummaryBuilder(rules, self.ai_manager.model_name, top_n)
+                model_label = self.ai_manager.model_name if (ai_used and self.ai_manager) else "offline-rule-screener"
+                builder = SummaryBuilder(rules, model_label, top_n)
                 summary_data = builder.build(results)
-                summary_data["overall_summary"] = self.ai_manager.write_summary(summary_data)
+                summary_data["qualified_count"] = len(accepted)
+                summary_data["zero_score_count"] = max(0, summary_data["totals"].get("scored", 0) - len(accepted))
+                ai_text = self.ai_manager.write_summary(summary_data) if (ai_used and self.ai_manager) else ""
+                summary_data["overall_summary"] = ai_text or SummaryBuilder.build_fallback_narrative(summary_data)
             except Exception as err:
                 print(f"  [!] Could not create the summary: {err}")
 
@@ -207,7 +209,15 @@ class MainProg:
             print(f"  [!] Could not save results: {err}")
 
     def generate_overview_report(self, summary_data: Dict[str, Any]) -> Path:
-        """The report generator now reads the AI summary dict (AI mode only)."""
+        """Extracts shortlisted candidates from summary_data and generates an overview report."""
         if self.report_generator is None:
             raise RuntimeError("Overview report generator is unavailable.")
-        return self.report_generator.generate_overview_report(summary_data)
+        candidates = summary_data
+        if isinstance(summary_data, dict):
+            candidates = (
+                summary_data.get("shortlisted")
+                or summary_data.get("top_candidates")
+                or summary_data.get("ranked_candidates")
+                or []
+            )
+        return self.report_generator.generate_overview_report(candidates)

@@ -168,6 +168,9 @@ class DataManager:
     def add_company_member(self, company_id: int, user_id: int) -> None:
         self.db_handler.add_company_member(company_id, user_id)
 
+    def list_user_companies(self, user_id: int) -> List[Dict[str, Any]]:
+        return self.db_handler.list_user_companies(user_id)
+
 # Handle resume files
 
     def parse_pdf_bytes(self, file_name: str, pdf_bytes: bytes) -> Resume:

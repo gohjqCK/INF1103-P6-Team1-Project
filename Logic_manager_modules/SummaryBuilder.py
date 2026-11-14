@@ -91,3 +91,50 @@ class SummaryBuilder:
     @staticmethod
     def _invalid_documents(invalid: list[dict]) -> list[dict]:
         return [{"file": entry["file"], "reason": entry["reason"]} for entry in invalid]
+
+    @staticmethod
+    def build_fallback_narrative(report: dict) -> str:
+        """Deterministic narrative fallback used when the LLM summary fails, returns empty, or runs offline."""
+        if not report or not isinstance(report, dict):
+            return ""
+        totals = report.get("totals") or {}
+        processed = totals.get("processed", 0)
+        scored = totals.get("scored", 0)
+        rejected = totals.get("rejected", 0)
+        invalid = totals.get("invalid", 0)
+        checked = scored + rejected
+
+        if checked == 0:
+            return (
+                f"Resumes received: {processed}. "
+                f"Checked against the rules: 0. "
+                f"Invalid and not checked: {invalid}."
+            )
+
+        counts = (
+            f"Resumes received: {processed}. "
+            f"Checked against the rules: {checked}, of which {rejected} rejected by a knockout rule. "
+            f"Invalid and not checked: {invalid}."
+        )
+
+        normal_rules = [
+            rule for rule in (report.get("rule_statistics") or [])
+            if rule.get("priority") != "reject"
+        ]
+        rule_sentence = ""
+        if normal_rules:
+            lowest = min(normal_rules, key=lambda r: r.get("met", 0))
+            rule_sentence = (
+                f"The rule '{lowest.get('rule', '')}' was met by the fewest resumes "
+                f"({lowest.get('met', 0)} of {checked}, {lowest.get('percent_met', 0.0)}%)."
+            )
+
+        top_candidates = report.get("top_candidates") or []
+        if top_candidates:
+            top = top_candidates[0]
+            cand_name = top.get("name") or top.get("file") or "Unknown"
+            cand_sentence = f"{cand_name} scored highest with {top.get('score')} out of 100."
+        else:
+            cand_sentence = "No candidate met any rule."
+
+        return " ".join(part for part in (counts, rule_sentence, cand_sentence) if part)

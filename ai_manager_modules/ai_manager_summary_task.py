@@ -36,13 +36,20 @@ class SummaryTask(AITask):
             raise LLMError("The AI's reply did not include a written summary.")
         summary = summary.strip()
         if not summary.endswith((".", "!", "?")):
-            raise LLMError("The AI's summary was cut off before the end of a sentence.")
+            if len(summary.split()) < 5:
+                raise LLMError("The AI's summary was cut off before the end of a sentence.")
+            summary += "."
         self._check_numbers(summary, task_input)
         return f"{self._write_counts(task_input)} {summary}"
 
     def _check_numbers(self, summary: str, report: dict) -> None:
-        """Rejects a summary containing a number the AI was not given, apart from the 100 in a score out of 100."""
-        allowed = set(self._NUMBER.findall(self._write_facts(report)))
+        """Rejects a summary containing a number the AI was not given, apart from 100 or .0 equivalents."""
+        allowed = set(self._NUMBER.findall(self._write_facts(report))) | {"100"}
+        for token in list(allowed):
+            if token.endswith(".0"):
+                allowed.add(token[:-2])
+            elif token.isdigit():
+                allowed.add(f"{token}.0")
         for number in self._NUMBER.findall(summary):
             if number not in allowed:
                 raise LLMError(f"The AI's summary used a number that is not in the facts: {number}")

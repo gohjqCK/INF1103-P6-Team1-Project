@@ -100,6 +100,29 @@ class TestResumeScorer(unittest.TestCase):
         result = ResumeScorer(rules).score([], "Skills: Python")
         self.assertEqual(result["score"], 20.0)
 
+    def test_knockout_negated_evidence_does_not_reject(self):
+        checks = [self._yes(1, "Clean criminal record and no prior offenses")]
+        result = ResumeScorer([CRIME]).score(checks, "Clean criminal record and no prior offenses")
+        self.assertEqual(result["rejected_by"], [])
+
+    def test_core_keyword_rescues_multiword_rule_unless_missing_or_negated(self):
+        sql_rule = {
+            "text": "Hands-on experience with SQL databases",
+            "priority": "must",
+            "keywords": ["SQL", "database", "databases"],
+        }
+        checks = [{"id": 1, "evidence": "", "shows": False}]
+        matched = ResumeScorer([sql_rule]).score(
+            checks, "Backend project: optimize SQL/API response times"
+        )
+        self.assertEqual(matched["score"], 100.0)
+
+        nosql_only = ResumeScorer([sql_rule]).score(checks, "Managed MongoDB databases")
+        self.assertEqual(nosql_only["score"], 0.0)
+
+        negated = ResumeScorer([sql_rule]).score(checks, "Candidate has no SQL background")
+        self.assertEqual(negated["score"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

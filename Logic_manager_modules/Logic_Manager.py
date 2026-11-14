@@ -70,6 +70,7 @@ def validate_resume_func(resume_list):
         if type(resume) is not dict:
             err_msg="Resume in "+ str(resume_count) +" position is not dictionary"
             return err_msg
+        resume_count+=1
     return 0
 
 #Check if keys exists: "outcome" and "score"
@@ -79,6 +80,7 @@ def validate_resume_keys_func(resume_list):
     for resume in resume_list:
         if "outcome" not in resume:
             result= "dictionary in "+ str(resume_count) +" position is missing a key named \"outcome\""
+            break
 
         if "score" not in resume:
             result= "dictionary in "+ str(resume_count)+" position is missing a key named \"score\""

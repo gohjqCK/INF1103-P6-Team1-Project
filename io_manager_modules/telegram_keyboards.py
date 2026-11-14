@@ -8,11 +8,36 @@ class TelegramKeyboards:
     """Factory creating inline keyboard markups for the full Telegram Bot application."""
 
     @staticmethod
-    def auth_menu() -> InlineKeyboardMarkup:
+    def auth_menu(joined_companies: Optional[List[Dict[str, Any]]] = None) -> InlineKeyboardMarkup:
         kb = InlineKeyboardMarkup(row_width=1)
+        for comp in joined_companies or []:
+            comp_id = comp.get("company_id")
+            comp_name = comp.get("company_name", "Company")
+            invite = comp.get("invite_code", "")
+            label = f"🏢 Switch to {comp_name} ({invite})" if invite else f"🏢 Switch to {comp_name}"
+            kb.add(InlineKeyboardButton(label, callback_data=f"auth_switch:{comp_id}"))
         kb.add(
             InlineKeyboardButton("🏢 Create New Company Folder", callback_data="auth_create"),
             InlineKeyboardButton("🔑 Join Company with Invite Code", callback_data="auth_join"),
+        )
+        return kb
+
+    @staticmethod
+    def cancel_button(callback_data: str = "menu_main", label: str = "❌ Cancel") -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup(row_width=1)
+        kb.add(InlineKeyboardButton(label, callback_data=callback_data))
+        return kb
+
+    @staticmethod
+    def confirm_action_menu(
+        confirm_callback: str,
+        cancel_callback: str,
+        confirm_label: str = "✅ Yes, Delete",
+    ) -> InlineKeyboardMarkup:
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton(confirm_label, callback_data=confirm_callback),
+            InlineKeyboardButton("❌ Cancel", callback_data=cancel_callback),
         )
         return kb
 
@@ -79,9 +104,10 @@ class TelegramKeyboards:
             rs_name = str(rs.get("set_name", "Untitled Set"))
             count = len(rs.get("rules") or [])
             prefix = "✅ " if rs_id == active_set_id else "📂 "
+            suffix = " [ACTIVE]" if rs_id == active_set_id else ""
             kb.add(
                 InlineKeyboardButton(
-                    f"{prefix}{rs_name} ({count} rule{'s' if count != 1 else ''})",
+                    f"{prefix}{rs_name} ({count} rule{'s' if count != 1 else ''}){suffix}",
                     callback_data=f"ruleset_pick:{rs_id}",
                 )
             )

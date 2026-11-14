@@ -8,7 +8,11 @@ class ResumeEvaluator:
   #categorise the resume/profile into the respective list
   def evaluate(resume) -> str:
     """Responsible ONLY for business rules and categorization."""
-    if resume.get_outcome != "scored" or not isinstance(resume.get_score, float):
+    if (
+        resume.get_outcome != "scored"
+        or isinstance(resume.get_score, bool)
+        or not isinstance(resume.get_score, (int, float))
+    ):
       return "invalid"
     elif resume.get_outcome == "scored" and resume.get_score == 0.0:
       return "rejected"

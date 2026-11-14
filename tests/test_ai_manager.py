@@ -171,6 +171,35 @@ class TestAIManager(unittest.TestCase):
         ids = {entry["file"]: entry["id"] for entry in results}
         self.assertEqual(ids, {"a.pdf": 7, "scan.pdf": 8})
 
+    def test_reconcile_summary_removes_contradicted_missed_rule_claims(self):
+        rules = [
+            {"text": "Knows Python", "priority": "must", "keywords": ["python"]},
+            {"text": "Experience designing SQL schemas", "priority": "must", "keywords": ["sql"]},
+        ]
+        cleaned = AIManager._reconcile_summary(
+            "Candidate has hands-on experience with Python and SQL databases.",
+            rules_met=["Knows Python"],
+            rules_missed=["Experience designing SQL schemas"],
+            rules=rules,
+        )
+        self.assertIn("Python", cleaned)
+        self.assertNotIn("SQL databases", cleaned)
+
+        noted = AIManager._reconcile_summary(
+            "Candidate has strong SQL background.",
+            rules_met=["Knows Python"],
+            rules_missed=["Experience designing SQL schemas"],
+            rules=rules,
+        )
+        self.assertIn("Did not meet requirement(s): Experience designing SQL schemas.", noted)
+
+    def test_knockout_negated_evidence_is_not_rejected(self):
+        checks = [{"id": 3, "evidence": "No criminal record", "shows": True}]
+        client = FakeLLMClient(reply=self._resume_reply(checks=checks))
+        results = AIManager(client).screen_resumes(RULES, [make_resume("a.pdf", "Ada has Python and No criminal record")])
+        self.assertEqual(results[0]["outcome"], "scored")
+        self.assertEqual(results[0]["rejected_by"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,16 @@
 """Validation, normalization, and credential utilities for Telegram I/O."""
 import hashlib
+from pathlib import Path
+import re
 import secrets
 from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    import bcrypt
+    _BCRYPT_AVAILABLE = True
+except ImportError:
+    bcrypt = None
+    _BCRYPT_AVAILABLE = False
 
 PRIORITY_WEIGHTS: Dict[str, int] = {
     "must": 4,
@@ -20,7 +29,7 @@ class TelegramValidator:
     MIN_SET_NAME_LENGTH = 2
     MAX_SET_NAME_LENGTH = 60
     MIN_COMPANY_NAME_LENGTH = 2
-    MIN_PASSCODE_LENGTH = 4
+    MIN_PASSCODE_LENGTH = 6
     PRIORITY_WEIGHTS: Dict[str, int] = dict(PRIORITY_WEIGHTS)
 
     @classmethod
@@ -106,15 +115,24 @@ class TelegramValidator:
 
     @staticmethod
     def hash_passcode(passcode: str) -> str:
-        """Returns the SHA-256 hex digest of a passcode."""
-        return hashlib.sha256(passcode.encode("utf-8")).hexdigest()
+        """Returns a salted bcrypt hash of the trimmed passcode."""
+        clean = (passcode or "").strip().encode("utf-8")
+        if _BCRYPT_AVAILABLE:
+            return bcrypt.hashpw(clean, bcrypt.gensalt()).decode("utf-8")
+        return hashlib.sha256(clean).hexdigest()
 
     @classmethod
     def verify_passcode(cls, passcode: str, target_hash: Optional[str]) -> bool:
-        """Checks whether a plaintext passcode matches its stored SHA-256 hash."""
+        """Verifies a plaintext passcode against a bcrypt hash (with legacy SHA-256 fallback)."""
         if not target_hash:
             return False
-        return cls.hash_passcode((passcode or "").strip()) == target_hash
+        clean = (passcode or "").strip()
+        if target_hash.startswith(("$2a$", "$2b$", "$2y$")) and _BCRYPT_AVAILABLE:
+            try:
+                return bool(bcrypt.checkpw(clean.encode("utf-8"), target_hash.encode("utf-8")))
+            except ValueError:
+                return False
+        return hashlib.sha256(clean.encode("utf-8")).hexdigest() == target_hash
 
     @staticmethod
     def generate_invite_code(company_name: str) -> str:
@@ -123,17 +141,33 @@ class TelegramValidator:
         return f"{prefix}-{secrets.randbelow(9000) + 1000}"
 
     @staticmethod
+    def sanitize_filename(file_name: str) -> str:
+        """Normalizes uploaded resume filenames consistently and strips bot numeric prefixes."""
+        raw_name = Path(file_name or "resume.pdf").name
+        stem = Path(raw_name).stem
+        ext = Path(raw_name).suffix.lower() or ".pdf"
+        stem = re.sub(r"^\d{6,}_\d{6,}_", "", stem)
+        stem = re.sub(r"\([^)]*\)|\[[^\]]*\]", "", stem)
+        stem = re.sub(r"[^\w]+", "_", stem).strip("_")
+        stem = re.sub(r"_+", "_", stem) or "resume"
+        return f"{stem}{ext}"
+
+    @staticmethod
     def cap_top_n(requested_n: Any, resume_count: int) -> Tuple[int, bool]:
-        """Caps top_n to resume_count when resumes exist (>= 1). Returns (effective_n, was_capped)."""
+        """Caps top_n to 100 max and resume_count when resumes exist (>= 1). Returns (effective_n, was_capped)."""
         try:
             parsed_n = int(requested_n)
             parsed_count = max(0, int(resume_count or 0))
         except (TypeError, ValueError) as err:
             raise ValueError("Top N limit must be a valid whole number.") from err
-        val = max(1, min(parsed_n, 100))
+        if parsed_n < 1:
+            raise ValueError("Top N limit must be at least 1.")
+        was_capped = parsed_n > 100
+        val = min(parsed_n, 100)
         if parsed_count > 0 and val > parsed_count:
-            return parsed_count, True
-        return val, False
+            val = parsed_count
+            was_capped = True
+        return val, was_capped
 
     @staticmethod
     def parse_callback_int(data: str, part_index: int = 1, sep: str = ":") -> int:

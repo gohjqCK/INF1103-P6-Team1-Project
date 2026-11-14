@@ -13,6 +13,7 @@ class TelegramSessionStore:
         self._default_top_n = default_top_n
         self._sessions: Dict[int, Dict[str, Any]] = {}
         self._user_active_company: Dict[int, str] = {}
+        self._logged_out_users: set[int] = set()
 
     def get_session(self, chat_id: int) -> Dict[str, Any]:
         """Returns the session dictionary for chat_id, initializing defaults if needed."""
@@ -35,15 +36,13 @@ class TelegramSessionStore:
             self.get_session(chat_id)["top_n"] = int(val)
 
     def get_effective_top_n(self, chat_id: int, resume_count: int) -> int:
-        """Returns session top_n capped to resume_count (when > 0) and syncs session."""
+        """Returns session top_n capped to resume_count (when > 0) without overwriting preference."""
         with self._lock:
             session = self.get_session(chat_id)
-            effective_n, was_capped = TelegramValidator.cap_top_n(
+            effective_n, _ = TelegramValidator.cap_top_n(
                 session.get("top_n", self._default_top_n),
                 resume_count,
             )
-            if was_capped:
-                session["top_n"] = effective_n
             return effective_n
 
     def get_pending_rule_text(self, chat_id: int) -> Optional[str]:
@@ -62,12 +61,19 @@ class TelegramSessionStore:
             return self._user_active_company.get(user_id)
 
     def set_active_company_name(self, user_id: int, company_name: str) -> None:
-        """Sets the active company name for user_id."""
+        """Sets the active company name for user_id and clears any explicit logout state."""
         with self._lock:
             self._user_active_company[user_id] = company_name
+            self._logged_out_users.discard(user_id)
 
     def clear_active_company(self, user_id: int) -> None:
         """Logs user_id out of their active company selection."""
         with self._lock:
             self._user_active_company.pop(user_id, None)
+            self._logged_out_users.add(user_id)
+
+    def is_logged_out(self, user_id: int) -> bool:
+        """Returns True if user_id explicitly logged out and has not selected a company yet."""
+        with self._lock:
+            return user_id in self._logged_out_users
 

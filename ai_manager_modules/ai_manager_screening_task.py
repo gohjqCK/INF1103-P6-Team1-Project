@@ -22,8 +22,11 @@ class ScreeningTask(AITask):
          "1. Identify document_type: 'resume', 'job_description', 'guide_or_sample', or 'other'. "
          "If it is NOT a resume, set checks to [] and candidate_info to null.\n"
          "2. If it is a resume, check it ONLY against the provided numbered rules. "
-         "Do not infer or guess. For evidence, quote exact text from the resume or use \"\".\n"
-         "3. Extract key details into candidate_info (ignore personal attributes like age/gender/ethnicity).\n\n"
+         "Do not infer or guess. If a rule lists examples (e.g. 'such as X or Y'), demonstrating the core skill "
+         "with an exact quote from the resume satisfies the rule (\"shows\": true). "
+         "For evidence, quote exact text from the resume or use \"\".\n"
+         "3. Extract key details into candidate_info (ignore personal attributes like age/gender/ethnicity). "
+         "The summary MUST strictly align with checks and NEVER claim skills or experience for any rule where shows is false.\n\n"
          "Reply strictly in this JSON format:\n"
          '{{\n'
          '  "document_type": "resume|job_description|guide_or_sample|other",\n'

@@ -85,6 +85,20 @@ class TestSummaryBuilder(unittest.TestCase):
     def test_overall_summary_starts_empty(self):
         self.assertEqual(self._build()["overall_summary"], "")
 
+    def test_fallback_narrative_formats_counts_lowest_rule_and_top_candidate(self):
+        narrative = SummaryBuilder.build_fallback_narrative(self._build())
+        self.assertIn("Resumes received: 5.", narrative)
+        self.assertIn("Cisco", narrative)
+        self.assertIn("A.PDF scored highest with 100.0 out of 100.", narrative)
+
+    def test_fallback_narrative_handles_zero_checked_resumes(self):
+        report = self._build(results=[make_entry("bad.pdf", "invalid", reason="Empty")])
+        narrative = SummaryBuilder.build_fallback_narrative(report)
+        self.assertEqual(
+            narrative,
+            "Resumes received: 1. Checked against the rules: 0. Invalid and not checked: 1.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

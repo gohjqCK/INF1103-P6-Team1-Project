@@ -23,7 +23,35 @@ class Resume:
             return "invalid", "No readable text (it may be a scanned image)"
         elif len(self.raw_text) > self.MAX_TEXT_LENGTH:
             return "invalid", f"Too long for one resume ({self.pages} pages)"
+        non_resume_reason = self.detect_non_resume_reason(self.raw_text)
+        if non_resume_reason:
+            return "invalid", non_resume_reason
         return "valid", ""
+
+    @staticmethod
+    def detect_non_resume_reason(raw_text: str) -> str:
+        """Detects obvious job descriptions or anonymized template samples at upload time."""
+        low = (raw_text or "").lower()
+        if not low:
+            return ""
+        if "resume sample" in low or "not included for anonymity" in low or "xxxxx@" in low:
+            return "Not a resume (anonymized template or resume sample)"
+        jd_markers = (
+            "main purpose of the job",
+            "job description",
+            "job title :",
+            "job title:",
+            "position summary",
+            "about the role",
+            "key responsibilities",
+            "administrators are responsible for",
+            "equal opportunity employer",
+            "minimum qualifications",
+        )
+        hits = sum(1 for marker in jd_markers if marker in low)
+        if hits >= 2 or "main purpose of the job" in low:
+            return "Not a resume (appears to be a job description)"
+        return ""
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts object state to a dictionary for JSON serialization."""

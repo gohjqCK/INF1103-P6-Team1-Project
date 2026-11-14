@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import MagicMock
+from data_manager_modules.data_manager_resume import Resume
 from data_manager_modules.data_manager_side import DataManager
 
 
@@ -85,6 +86,59 @@ class TestDataManagerPipeline(unittest.TestCase):
         res = self.dm.process_all_resumes(company_id=101)
 
         self.assertEqual(res[0]["id"], 7)
+
+    def test_non_resume_job_description_and_anonymized_sample_marked_invalid(self):
+        """Detects job descriptions and anonymized sample templates at Resume initialization."""
+        jd = Resume(
+            "IT Infrastructure Administrator Resume (Invalid example).pdf",
+            raw_text="COMPANY : Acme\nJOB TITLE : IT Admin\nMAIN PURPOSE OF THE JOB\n" + ("Duties " * 40),
+            pages=1,
+        )
+        sample = Resume(
+            "Senior IT Project Manager Resume (Invalid example).pdf",
+            raw_text="Resume Sample\nName & Personal Details of clients are not included for Anonymity\nE-mail: xxxxx@example.com\n" + ("Project " * 40),
+            pages=1,
+        )
+        valid = Resume(
+            "Ada_Lovelace.pdf",
+            raw_text="Ada Lovelace\nSenior Software Engineer with Python, APIs, and distributed backend systems.\n" + ("Work experience details " * 15),
+            pages=1,
+        )
+
+        self.assertEqual(jd.status, "invalid")
+        self.assertIn("job description", jd.reason.lower())
+        self.assertEqual(sample.status, "invalid")
+        self.assertIn("anonymized", sample.reason.lower())
+        self.assertEqual(valid.status, "valid")
+
+    def test_upload_resume_bytes_sanitizes_name_and_updates_without_upsert(self):
+        from data_manager_modules.data_manager_supabase_handler import SupabaseHandler
+
+        handler = SupabaseHandler.__new__(SupabaseHandler)
+        client = MagicMock()
+        handler.client = client
+        handler.STORAGE_BUCKET = "resume_files"
+
+        bucket = MagicMock()
+        bucket.get_public_url.return_value = "https://example.com/101/Ada_Lovelace.pdf"
+        client.storage.from_.return_value = bucket
+
+        table = MagicMock()
+        client.table.return_value = table
+        select_chain = table.select.return_value.eq.return_value.eq.return_value
+        select_chain.execute.return_value = MagicMock(data=[])
+
+        parsed = Resume("Ada_Lovelace.pdf", raw_text="Ada Lovelace\n" + ("Python engineer " * 30), pages=1)
+        handler.parse_pdf_bytes = MagicMock(return_value=parsed)
+
+        out = handler.upload_resume_bytes("Ada Lovelace.pdf", b"%PDF-1.4", company_id=101)
+        self.assertEqual(out["file_name"], "Ada_Lovelace.pdf")
+        table.upsert.assert_not_called()
+        table.insert.assert_called_once()
+
+        select_chain.execute.return_value = MagicMock(data=[{"id": 99}])
+        handler.upload_resume_bytes("Ada Lovelace.pdf", b"%PDF-1.4", company_id=101)
+        table.update.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()

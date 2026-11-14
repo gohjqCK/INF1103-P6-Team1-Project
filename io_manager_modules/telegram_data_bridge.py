@@ -1,9 +1,15 @@
 """Cloud-ready DataManager bridge with thread-safe in-memory stub fallback."""
 import io
+import re
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from io_manager_modules.telegram_validator import TelegramValidator
+
+try:
+    from data_manager_modules.data_manager_resume import Resume as DataResume
+except Exception:
+    DataResume = None
 
 try:
     import pypdf
@@ -36,6 +42,7 @@ class TelegramDataBridge:
 
         # Thread-safe in-memory caches and stub stores (used when cloud DataManager is unavailable)
         self._lock = threading.RLock()
+        self._upload_locks: Dict[int, threading.RLock] = {}
         self._next_stub_company_id = 101
         self._next_stub_ruleset_id = 201
         self._companies: Dict[str, Dict[str, Any]] = {}
@@ -150,15 +157,61 @@ class TelegramDataBridge:
         self,
         user_id: int,
         active_name: Optional[str] = None,
+        allow_fallback: bool = True,
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
         """Resolves a user's active company record from active_name or membership list."""
+        if active_name:
+            with self._lock:
+                cached = self._companies.get(active_name)
+                if cached and (
+                    user_id == cached.get("owner") or user_id in cached.get("members", [])
+                ):
+                    return active_name, cached
+            for comp in self.list_user_companies(user_id):
+                if comp.get("company_name") == active_name:
+                    return comp["company_name"], comp
+
+        if not allow_fallback:
+            return None, None
+
         with self._lock:
-            if active_name and active_name in self._companies:
-                return active_name, self._companies[active_name]
             for name, info in self._companies.items():
                 if user_id == info.get("owner") or user_id in info.get("members", []):
                     return name, info
+
+        joined = self.list_user_companies(user_id)
+        if joined:
+            return joined[0]["company_name"], joined[0]
         return None, None
+
+    def list_user_companies(self, user_id: int) -> List[Dict[str, Any]]:
+        """Lists all companies that user_id owns or has joined."""
+        if self._cloud_has("list_user_companies"):
+            records = self._call_cloud(
+                "List joined companies",
+                self._data_manager.list_user_companies,
+                user_id,
+            ) or []
+            with self._lock:
+                for rec in records:
+                    self._companies[rec["company_name"]] = rec
+            return list(records)
+
+        with self._lock:
+            return [
+                dict(info)
+                for info in self._companies.values()
+                if user_id == info.get("owner") or user_id in info.get("members", [])
+            ]
+
+    def switch_user_company(self, user_id: int, company_id: int) -> Optional[Dict[str, Any]]:
+        """Returns the company record if user_id is authorized to switch into company_id."""
+        for rec in self.list_user_companies(user_id):
+            if int(rec.get("company_id", -1)) == int(company_id):
+                with self._lock:
+                    self._companies[rec["company_name"]] = rec
+                return dict(rec)
+        return None
 
     def get_default_company_inputs(self) -> Tuple[str, int, Optional[Dict[str, Any]], List[Dict[str, Any]]]:
         """Returns default company details and active rule set for BaseIOManager.get_employer_inputs."""
@@ -417,6 +470,20 @@ class TelegramDataBridge:
                     "pages": pages,
                     "text": text,
                 }
+            non_resume_reason = (
+                DataResume.detect_non_resume_reason(text)
+                if DataResume is not None
+                else ""
+            )
+            if non_resume_reason:
+                return {
+                    "file": file_name,
+                    "file_name": file_name,
+                    "status": "invalid",
+                    "reason": non_resume_reason,
+                    "pages": pages,
+                    "text": text,
+                }
             return {
                 "file": file_name,
                 "file_name": file_name,
@@ -435,6 +502,10 @@ class TelegramDataBridge:
                 "text": "",
             }
 
+    def _get_company_upload_lock(self, company_id: int) -> threading.RLock:
+        with self._lock:
+            return self._upload_locks.setdefault(company_id, threading.RLock())
+
     def upload_resume(
         self,
         company_id: int,
@@ -442,41 +513,63 @@ class TelegramDataBridge:
         file_name: str,
         pdf_bytes: bytes,
     ) -> Dict[str, Any]:
-        """Uploads raw PDF bytes to cloud Storage or session stub store."""
+        """Atomically checks duplicates, cleans filenames, uploads PDF bytes, and returns accurate total count."""
         if not pdf_bytes:
             raise ValueError("Uploaded PDF file is empty (0 bytes).")
 
-        if self._cloud_has("upload_resume_bytes"):
-            result = self._call_cloud(
-                "Upload resume",
-                self._data_manager.upload_resume_bytes,
-                file_name=file_name,
-                pdf_bytes=pdf_bytes,
-                company_id=company_id,
-            )
-            result.setdefault("file_name", file_name)
-            result.setdefault("source", "Supabase Cloud")
-            return result
+        clean_name = self._validator.sanitize_filename(file_name)
+        parsed = self.parse_pdf_bytes_in_memory(clean_name, pdf_bytes)
+        new_text_norm = re.sub(r"\W+", "", (parsed.get("text") or "").lower())
 
-        parsed = self.parse_pdf_bytes_in_memory(file_name, pdf_bytes)
-        entry = {
-            "file": file_name,
-            "file_name": file_name,
-            "status": parsed.get("status", "valid"),
-            "reason": parsed.get("reason", ""),
-            "pages": parsed.get("pages", 0),
-            "text": parsed.get("text", ""),
-            "pdf_bytes": pdf_bytes,
-            "company_id": company_id,
-            "company_name": company_name,
-            "source": "Session Memory (Cloud Stub)",
-        }
-        with self._lock:
-            bucket = self._company_resumes.setdefault(company_id, [])
-            bucket = [r for r in bucket if r.get("file_name") != file_name]
-            bucket.append(entry)
-            self._company_resumes[company_id] = bucket
-        return dict(entry)
+        with self._get_company_upload_lock(company_id):
+            existing = self.list_resumes(company_id)
+            for ex in existing:
+                ex_name = ex.get("file_name") or ex.get("file") or ""
+                if (
+                    ex_name.lower() == clean_name.lower()
+                    or self._validator.sanitize_filename(ex_name).lower() == clean_name.lower()
+                ):
+                    raise ValueError(
+                        f"Duplicate resume: '{clean_name}' has already been uploaded (matches '{ex_name}')."
+                    )
+                ex_text_norm = re.sub(r"\W+", "", (ex.get("text") or "").lower())
+                if len(new_text_norm) >= 100 and ex_text_norm == new_text_norm:
+                    raise ValueError(
+                        f"Duplicate resume content: this PDF is identical to already uploaded file '{ex_name}'."
+                    )
+
+            if self._cloud_has("upload_resume_bytes"):
+                result = self._call_cloud(
+                    "Upload resume",
+                    self._data_manager.upload_resume_bytes,
+                    file_name=clean_name,
+                    pdf_bytes=pdf_bytes,
+                    company_id=company_id,
+                )
+                result.setdefault("file", clean_name)
+                result["file_name"] = clean_name
+                result.setdefault("source", "Supabase Cloud")
+                result["total_resumes"] = len(self.list_resumes(company_id))
+                return result
+
+            entry = {
+                "file": clean_name,
+                "file_name": clean_name,
+                "status": parsed.get("status", "valid"),
+                "reason": parsed.get("reason", ""),
+                "pages": parsed.get("pages", 0),
+                "text": parsed.get("text", ""),
+                "pdf_bytes": pdf_bytes,
+                "company_id": company_id,
+                "company_name": company_name,
+                "source": "Session Memory (Cloud Stub)",
+            }
+            with self._lock:
+                bucket = self._company_resumes.setdefault(company_id, [])
+                bucket.append(entry)
+                entry_copy = dict(entry)
+                entry_copy["total_resumes"] = len(bucket)
+            return entry_copy
 
     def list_resumes(self, company_id: int) -> List[Dict[str, Any]]:
         """Lists uploaded resumes for company_id."""
@@ -596,6 +689,13 @@ class TelegramDataBridge:
                 self._company_summaries[key] = dict(summary_data)
             if filtered_resumes is not None:
                 self._company_filtered_resumes[key] = dict(filtered_resumes)
+                for inv in filtered_resumes.get("invalid", []):
+                    fname = inv.get("file") or inv.get("file_name")
+                    reason = inv.get("reason") or "Marked invalid during screening"
+                    for item in self._company_resumes.get(company_id, []):
+                        if item.get("file_name") == fname or item.get("file") == fname:
+                            item["status"] = "invalid"
+                            item["reason"] = reason
 
     def get_screening_results(
         self,
