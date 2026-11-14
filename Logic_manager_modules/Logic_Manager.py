@@ -3,8 +3,10 @@ import copy
 import json
 from pathlib import Path
 from json.decoder import JSONDecodeError
+from Logic_manager_modules.Resume import Resume
 from Logic_manager_modules.OnlineResume import OnlineResume
 from Logic_manager_modules.OfflineResume import OfflineResume
+from Logic_manager_modules.FilteredList import FilteredList
 from Logic_manager_modules.OverallList import OverallList
 from Logic_manager_modules.AcceptedList import AcceptedList
 from Logic_manager_modules.RejectedList import RejectedList
@@ -84,18 +86,25 @@ def validate_resume_keys_func(resume_list):
     return result
 
 #
-def filter_resume_func(resume_list,object_type):
+def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredList]:
     resume_list_copy=copy.deepcopy(resume_list)
-    #Creates a ResumeEvaluator object
-    resumeEvaluate=ResumeEvaluator(resume_list_copy,object_type)
 
+    overallList=OverallList()
     #creates accepted, rejected and invalid list and append all to Overall list
-    resumeEvaluate.create_classes()
+    acceptedList=AcceptedList()
+    rejectedList=RejectedList()
+    invalidList=InvalidList()
+    overallList.list_overall=acceptedList
+    overallList.list_overall=rejectedList
+    overallList.list_overall=invalidList
+    print(overallList.list_overall)
+    #creates resume or profile(for offline mode) OCP
+    for raw_resume in resume_list_copy:
+      resume=object_type(raw_resume)
+      ResumeEvaluator.allocate(overallList,resume)
 
-    #Create objects and allocate to the respective lists
-    resumeEvaluate.create_obj()
         
-    return resumeEvaluate.get_overall_list.list_overall[0],resumeEvaluate.get_overall_list.list_overall[1],resumeEvaluate.get_overall_list.list_overall[2]
+    return overallList.list_overall[0],overallList.list_overall[1],overallList.list_overall[2]
 
 
 
