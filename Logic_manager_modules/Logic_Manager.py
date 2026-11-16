@@ -88,25 +88,27 @@ def validate_resume_keys_func(resume_list):
         resume_count+=1
     return result
 
-#
+#Filter Resume by list (accepted, rejected or invalid)
 def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredList]:
     resume_list_copy=copy.deepcopy(resume_list)
+
     #crates overallList object
     overallList=OverallList()
 
-    #creates resume or profile(for offline mode) OCP
+    #Looping through all resume in AI Output
     for raw_resume in resume_list_copy:
+      #creates online resume or offline resume using object_type #OCP
       resume=object_type(raw_resume)
+
+      #Decides which list (accepted, rejeced or invalid) to place the resume in
       category=ResumeEvaluator.evaluate(resume)
+      
+      #Adds the resume and the list category to overall list
       overallList.add(resume,category) 
     return overallList.get_accepted_list,overallList.get_rejected_list,overallList.get_invalid_list
 
 
 
-
-'''def filter_resume_func(resume_list,mode):
-    function_name=f"filter_resume_{mode}_func"
-    function_name.__name__'''
 
 
 def validateOfflineFile(results_path):

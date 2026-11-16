@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
-
+#interface to sort scores
 class Sort_score(ABC):
-    #Orders the list from highest to lowest score // using merge sort
     @abstractmethod
     def sort_score(self):
         pass

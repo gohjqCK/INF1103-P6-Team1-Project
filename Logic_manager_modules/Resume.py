@@ -8,7 +8,7 @@ class Resume(ABC):
         self.__status=None
         self.__pages=None
         self.__text=None
-
+    #returns resume attributes
     @property
     def get_file(self) -> str:
         return self.__file

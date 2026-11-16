@@ -7,18 +7,18 @@ class OverallList:
         self.rejectedList=RejectedList()
         self.invalidList=InvalidList()
     
-
+    #each method returns the respective list
     @property
     def get_accepted_list(self)->list:
         return self.acceptedList
-    
     @property
     def get_rejected_list(self)->list:
         return self.rejectedList
     @property
     def get_invalid_list(self)->list:
         return self.invalidList
-    
+
+    #Method to link a resume to the category list.
     def add(self, resume, category: str)-> None:
         """Responsible ONLY for data management."""
         if category == "invalid":
@@ -29,13 +29,3 @@ class OverallList:
             self.acceptedList.list=resume
 
 
-'''
-list1=OverallList()
-input1={"accepted":["lol"]}
-input2={"rejecetd":["hehe"]}
-input3={"invalid":["haha"]}
-list1.list_overall=input1
-list1.list_overall=input2
-list1.list_overall=input3
-print(list1.list_overall)
-'''

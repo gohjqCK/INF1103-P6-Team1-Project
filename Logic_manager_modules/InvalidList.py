@@ -4,6 +4,7 @@ class InvalidList(FilteredList):
     def __init__(self):
         super().__init__()
 
+    #Formatting the resume before handing over to file manager.
     #Abstract method
     @property
     def output_dict(self) -> dict:
