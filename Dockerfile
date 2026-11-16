@@ -29,6 +29,9 @@ COPY ai_manager_modules ./ai_manager_modules
 COPY Logic_manager_modules ./Logic_manager_modules
 COPY main_modules ./main_modules
 
+# Copy the unit tests so they can run inside the container
+COPY tests ./tests
+
 # The program reads resume folders and writes its JSON files in its current folder.
 # Run it from /work and mount your project folder there, so it can see your PDFs and
 # the results are saved back onto your computer:
