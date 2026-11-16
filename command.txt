@@ -41,8 +41,10 @@
    - Check Ollama CPU/GPU status:
      docker compose exec ollama ollama ps
      docker stats --no-stream ollama
-   - Run unit tests inside Docker:
-     docker run --rm --entrypoint python -e PYTHONPATH=/app -v "${PWD}:/work" resume-cli -m unittest discover tests -v
+   - Run unit tests inside Docker (rebuild first so the image has the latest code and tests):
+     docker build -t resume-cli .
+     docker run --rm -w /app --entrypoint python resume-cli -m unittest discover -s tests -t . -v
+     (No Ollama, Telegram or .env needed - expect "OK" at the end)
    - Stop the Telegram Bot:  Press Ctrl + C
    - Stop Ollama:            docker compose down
 
@@ -268,6 +270,13 @@ docker run -it --rm -v "${PWD}:/work" -e OLLAMA_MODEL=mistral resume-cli
 
 docker run -it --rm -v "$(pwd):/work" --add-host=host.docker.internal:host-gateway resume-cli
     Linux version (host.docker.internal does not exist on Linux without --add-host).
+
+docker run --rm -w /app --entrypoint python resume-cli -m unittest discover -s tests -t . -v
+    Run all unit tests INSIDE the image. No Ollama, Telegram or .env needed.
+    -w /app             : run from /app, where the Dockerfile copies the code and tests
+    --entrypoint python : run Python instead of starting the bot (main.py)
+    Expect "OK" at the end. Rebuild the image first if you changed any code or tests.
+    CI runs this same command on every push (.github/workflows/tests.yml).
 
 docker images
     List images on this machine and their sizes.
