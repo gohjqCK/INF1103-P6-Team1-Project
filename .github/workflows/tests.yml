@@ -36,3 +36,7 @@ jobs:
 
       - name: run tests inside the image
         run: docker run --rm -w /app --entrypoint python resume-screener -m unittest discover -s tests -t .
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: docker run --rm -e SUPABASE_URL -e SUPABASE_KEY app-test pytest
