@@ -12,7 +12,6 @@ except ImportError:
 
 _IMPORT_ERRORS: Dict[str, Exception] = {}
 
-# AI Manager
 try:
     from ai_manager_modules.ai_manager import AIManager
     from ai_manager_modules.ai_manager_ollama_client import OllamaClient
@@ -21,14 +20,12 @@ except Exception as err:
     OllamaClient = None
     _IMPORT_ERRORS["AI Manager"] = err
 
-# Data Manager (local-folder parser, used when the caller sends no resumes)
 try:
     from data_manager_modules.ResumeFolderParser import ResumeFolderParser
 except Exception as err:
     ResumeFolderParser = None
     _IMPORT_ERRORS["Data Manager (PDF parsing)"] = err
 
-# Logic Manager
 try:
     from Logic_manager_modules import Logic_Manager as LogicManager
     from Logic_manager_modules.OnlineResume import OnlineResume
@@ -53,8 +50,6 @@ Notify = Callable[[str], None]
 
 
 class MainProg:
-    """Coordinates AI, Data and Logic managers. TelegramIOManager calls run()."""
-
     def __init__(self, output_dir: str = "output"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -136,6 +131,7 @@ class MainProg:
         return self._package(accepted, rejected, invalid, summary_data)
 
     # ------------------------------------------------------------------ stages
+    # Parses resumes if DB is offline
     def _load_resumes(self, employer_inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
         sent = employer_inputs.get("resumes")
         if sent:
@@ -144,6 +140,7 @@ class MainProg:
             return []
         return self.resume_parser.parse(employer_inputs.get("pdf_directory", "resumes"))
 
+    # Screens if AI is online
     def _screen_with_ai(self, rules, resumes, notify: Notify) -> List[Dict[str, Any]]:
         total, done, lock = len(resumes), [0], threading.Lock()
 
@@ -154,6 +151,7 @@ class MainProg:
 
         return self.ai_manager.screen_resumes(rules, resumes, on_result=on_result)
 
+    # Screening for if AI is offline
     @staticmethod
     def _screen_offline(rules, resumes) -> List[Dict[str, Any]]:
         if LogicManager is None:
@@ -167,9 +165,9 @@ class MainProg:
             entry.setdefault("reason", "")
         return scored + invalid
 
+    # Categorizes the filtered results from logic manager
     @staticmethod
     def _categorise(results: List[Dict[str, Any]], ai_used: bool):
-        """Uses Logic_Manager.filter_resume_func, then maps the result objects back to the full dicts."""
         if LogicManager is None:
             raise RuntimeError("Logic Manager is unavailable.")
         resume_type = OnlineResume if ai_used else OfflineResume
@@ -191,6 +189,7 @@ class MainProg:
         return buckets["accepted"], buckets["rejected"], buckets["invalid"]
 
     # ------------------------------------------------------------------ output
+    # Packages the results into 3 categories
     @staticmethod
     def _package(accepted, rejected, invalid, summary_data) -> Dict[str, Any]:
         return {
@@ -209,7 +208,6 @@ class MainProg:
             print(f"  [!] Could not save results: {err}")
 
     def generate_overview_report(self, summary_data: Dict[str, Any]) -> Path:
-        """Extracts shortlisted candidates from summary_data and generates an overview report."""
         if self.report_generator is None:
             raise RuntimeError("Overview report generator is unavailable.")
         candidates = summary_data
