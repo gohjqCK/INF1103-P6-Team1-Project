@@ -3,3 +3,4 @@
 
 class LLMError(Exception):
     """The AI could not be reached, timed out, or replied with something unusable."""
+    # Raises an error when AI client returns an unusable reply or cannot be reached.

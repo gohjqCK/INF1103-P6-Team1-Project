@@ -6,7 +6,7 @@ from ai_manager_modules.ai_manager_text_matcher import TextMatcher
 
 class SummaryReconciler:
     """Stops a candidate summary from claiming skills for rules the scorer marked as missed."""
-
+    # Ensures that summary is accurate based on evidence from the resume
     _STOPWORDS = TextMatcher.GENERAL_WORDS | {
         "with", "such", "from", "into", "using", "than", "this", "that", "least",
         "must", "should", "able", "work", "working", "hands", "about",
@@ -20,6 +20,7 @@ class SummaryReconciler:
         rules: list[dict],
     ) -> str:
         """Prevents candidate_info.summary from claiming skills or rules that the scorer marked missed."""
+        # Nothing to fix without a summary or missed rules
         if not summary or not rules_missed:
             return summary
 

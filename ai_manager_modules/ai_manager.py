@@ -11,6 +11,7 @@ from ai_manager_modules.ai_manager_summary_task import SummaryTask
 from ai_manager_modules.ai_manager_summary_reconciler import SummaryReconciler
 
 
+# Main AIManager class
 class AIManager:
     """Checks the connection, adds keywords to rules, screens and scores resumes, and writes the summary text."""
 
@@ -21,10 +22,12 @@ class AIManager:
         self._summary_task = SummaryTask(client)
         self._summary_reconciler = SummaryReconciler()
 
+    # Checks if the AI is online
     def check_connection(self) -> bool:
         """Returns True if the AI is ready to answer."""
         return self._client.is_available()
 
+    #Add keywords to every rule
     def add_keywords(self, rules: list[dict]) -> list[dict]:
         """Adds a "keywords" list to every rule. A rule the AI fails on gets an empty list."""
         for rule in rules:
@@ -34,21 +37,26 @@ class AIManager:
                 rule["keywords"] = []
         return rules
 
-    def screen_resumes(self, rules: list[dict], resumes: list[dict],
-                       on_result: Optional[Callable[[dict], None]] = None) -> list[dict]:
+    # Screen the entire batch of resumes
+    def screen_resumes(self, rules: list[dict], resumes: list[dict], on_result: Optional[Callable[[dict], None]] = None) -> list[dict]:
         """Screens every resume and returns the results: scored first, then rejected, then invalid."""
+        # One task and scorer shared by all resumes, since the rules are the same
         task = ScreeningTask(self._client, rules)
         scorer = ResumeScorer(rules)
 
+
+        # executor.map passes one resume per call; this wrapper adds task, scorer, rules and progress reporting
         def screen_and_report(resume: dict) -> dict:
             entry = self._screen_one(task, scorer, resume, rules)
             if on_result is not None:
                 on_result(entry)
             return entry
 
+        # Screen several resumes at once; max_workers sets how many
         with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
             entries = list(executor.map(screen_and_report, resumes))
 
+        # Group the results by outcome
         ordered = []
         for outcome in ["scored", "rejected", "invalid"]:
             for entry in entries:
@@ -59,8 +67,11 @@ class AIManager:
     @property
     def model_name(self) -> str:
         """The AI model's name, so Logic Manager can record it in the report."""
+        # Gets the model
         return self._client.model_name
+    
 
+    # AI writes the summary
     def write_summary(self, report: dict) -> str:
         """Returns the AI-written summary of a report built by Logic Manager.
         Returns "" if no resumes were checked or the AI fails, so the report keeps its numbers.
@@ -74,6 +85,7 @@ class AIManager:
             return ""
 
 
+    # Runs the screening one resume at a time
     def _screen_one(
         self,
         task: ScreeningTask,
@@ -123,6 +135,7 @@ class AIManager:
         return entry
 
     @staticmethod
+    # Blank result with every field other managers expect
     def _empty_entry(resume: dict) -> dict:
         """Returns a result with every field other managers expect."""
         return {

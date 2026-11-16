@@ -5,12 +5,14 @@ from typing import Any
 from ai_manager_modules.ai_manager_llm_client import LLMClient
 
 
+# Template for every AI job: build prompt, ask the AI, check the reply
 class AITask(ABC):
     """One job for the AI: build a prompt, ask the AI, then check and use its reply."""
 
     def __init__(self, client: LLMClient):
         self._client = client
 
+    # Runs the prompt, reply generation
     def run(self, task_input: Any) -> Any:
         """Runs the job. Raises LLMError if the AI fails or its reply is not usable."""
         prompt = self._build_prompt(task_input)

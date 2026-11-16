@@ -11,10 +11,10 @@ from ai_manager_modules.ai_manager_text_matcher import TextMatcher
 
 class ScreeningTask(AITask):
     """Sends one resume to the AI, then validates and cleans every field of the reply before it is used."""
-
-    _CONTACT_FIELDS = ["name", "email", "phone"]
+    _CONTACT_FIELDS = ["name", "email", "phone"] 
     _LIST_FIELDS = ["qualifications", "work_experience", "projects"]
 
+    # Prompt used for the AI to screen
     _PROMPT = ChatPromptTemplate.from_messages([
         ("system",
          "You are an impartial resume screening assistant. Today is {today}.\n"
@@ -40,10 +40,12 @@ class ScreeningTask(AITask):
         ("human", "Rules:\n{rules}\n\nDocument:\n{resume}"),
     ])
 
+
     def __init__(self, client: LLMClient, rules: list[dict]):
         super().__init__(client)
         self._rules = rules
 
+    # Builds the prompt for AI, passing it the date, rules and resumes
     def _build_prompt(self, task_input: dict):
         numbered_rules = []
         for number, rule in enumerate(self._rules, 1):
@@ -54,6 +56,7 @@ class ScreeningTask(AITask):
             "resume": task_input["text"],
         })
 
+    # Parse reply from ai into a dictionary
     def _parse_reply(self, reply: dict, task_input: dict) -> dict:
         document_type = str(reply.get("document_type") or "unknown").lower()
         reason = str(reply.get("doc_type_reason") or "")
@@ -73,6 +76,7 @@ class ScreeningTask(AITask):
             "candidate_info": self._clean_candidate_info(reply.get("candidate_info"), task_input["text"]),
         }
 
+    # Drops checks with bad rule IDs and fixes field types
     def _clean_checks(self, checks: list) -> list[dict]:
         """Keeps only checks for a real rule, with the id, evidence and shows fields in a safe form."""
         cleaned = []
@@ -91,16 +95,19 @@ class ScreeningTask(AITask):
 
     def _read_rule_id(self, value) -> int | None:
         """Returns the rule number, or None if it is missing, not a number, or not one of the rules."""
+        # TypeError: missing or wrong type (None, list); ValueError: text like "abc".
         try:
             rule_id = int(value)
         except (TypeError, ValueError):
             return None
+        # Rules start at 1; 0 would wrongly pick the last rule via self._rules[-1].
         if 1 <= rule_id <= len(self._rules):
             return rule_id
         return None
 
     def _clean_candidate_info(self, info, resume_text: str) -> dict:
         """Fills in every field, keeping contact details and skills only if they are really in the resume."""
+        # Keeps contact details and skills only if they appear in the resume
         if not isinstance(info, dict):
             info = {}
         matcher = TextMatcher(resume_text)
@@ -122,4 +129,5 @@ class ScreeningTask(AITask):
     @staticmethod
     def _read_list(value) -> list:
         """Returns the value if it is a list, otherwise an empty list."""
+        # Returns the value if it is a list, otherwise []
         return value if isinstance(value, list) else []

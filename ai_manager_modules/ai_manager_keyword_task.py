@@ -26,13 +26,14 @@ class KeywordTask(AITask):
         ("human", "Rule: {rule}"),
     ])
 
-    
     def _build_prompt(self, task_input: str):
         """Builds the prompt using the rule set as input."""
+        # Fills the rule text into the template and returns the finished prompt
         return self._PROMPT.invoke({"rule": task_input})
 
-    """Parses the AI's reply and returns a list of keywords."""
     def _parse_reply(self, reply: dict, task_input: str) -> list[str]:
+        """Parses the AI's reply and returns a list of keywords."""
+        # Checks if the reply contains a list of keywords, removes general words, and adds other forms of the keywords.
         suggested = reply.get("keywords")
         if not isinstance(suggested, list):
             raise LLMError("The AI's reply did not include a list of keywords.")
@@ -41,6 +42,7 @@ class KeywordTask(AITask):
 
     def _remove_general_words(self, suggested: list) -> list[str]:
         """Removes keywords that are too general to be useful"""
+        # Returns a list of keywords that are not in the general words set and are not digits.
         keywords = []
         for word in suggested:
             word = str(word).strip()
@@ -54,6 +56,7 @@ class KeywordTask(AITask):
 
     def _add_word_forms(self, keywords: list[str]) -> list[str]:
         """Adds other forms of lower-case single words, e.g. "networking" -> "network", "networks"."""
+        # Returns a list of keywords
         forms = []
         for word in keywords:
             if word.islower() and " " not in word and len(word) >= 4:

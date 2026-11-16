@@ -9,10 +9,12 @@ from ai_manager_modules.ai_manager_task import AITask
 
 class SummaryTask(AITask):
     """Writes a short summary: Python states the counts, and the AI describes the rules and candidates."""
+    # Creates a short summary of the screening outcome
 
     _KNOCKOUT = "reject"
     _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
+    # Prompt given to AI to generate a summary based on statistics
     _PROMPT = ChatPromptTemplate.from_messages([
         ("system",
          "You write short reports for a hiring team, using ONLY the facts you are given.\n"
@@ -27,9 +29,11 @@ class SummaryTask(AITask):
         ("human", "Facts:\n{facts}"),
     ])
 
+    # Builds the prompt
     def _build_prompt(self, task_input: dict):
         return self._PROMPT.invoke({"facts": self._write_facts(task_input)})
 
+    # Parses the summary that the AI generated
     def _parse_reply(self, reply: dict, task_input: dict) -> str:
         summary = reply.get("overall_summary")
         if not isinstance(summary, str) or not summary.strip():
@@ -40,6 +44,7 @@ class SummaryTask(AITask):
         self._check_numbers(summary, task_input)
         return f"{self._write_counts(task_input)} {summary}"
 
+    # Checks the numbers generated in the summary if there is any if they are accurate
     def _check_numbers(self, summary: str, report: dict) -> None:
         """Rejects a summary containing a number the AI was not given, apart from 100 or .0 equivalents."""
         allowed = set(self._NUMBER.findall(self._write_facts(report))) | {"100"}
@@ -61,6 +66,7 @@ class SummaryTask(AITask):
                 f"Checked against the rules: {checked}, of which {totals['rejected']} rejected by a knockout rule. "
                 f"Invalid and not checked: {totals['invalid']}.")
 
+    # Plain sentences, because the AI misread numbers in raw JSON.
     def _write_facts(self, report: dict) -> str:
         """Writes the rules and candidates as plain sentences, because the AI misread the numbers in raw JSON."""
         checked = report["totals"]["scored"] + report["totals"]["rejected"]
