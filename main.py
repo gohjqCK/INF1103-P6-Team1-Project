@@ -16,17 +16,18 @@ def main():
     print("      RESUM-AI Team 1 - AI Resume Screening System (Phase 2)")
     print("=" * 65)
 
+    # Check if Telegram Token is in the env file
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         print("  [!] TELEGRAM_BOT_TOKEN is not set in .env - cannot start the bot.")
         sys.exit(1)
 
-    # 1. OOP coordinator (AI -> Data -> Logic managers)
+    # 2. OOP coordinator (AI -> Data -> Logic managers)
     pipeline = MainProg(output_dir="output")
     if not pipeline.check_ai_connection():
         print("  [Notice] Ollama offline. Screening will use the offline fallback.")
 
-    # 2. Telegram is the only interface now, so it runs in the main thread
+    # 3. Runs in telegram bot in the main thread
     bot = TelegramIOManager(token=token, pipeline_runner=pipeline.run)
     bot.start()
 
