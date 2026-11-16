@@ -3,15 +3,12 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from ai_manager_modules.ai_manager_llm_error import LLMError
 from ai_manager_modules.ai_manager_task import AITask
+from ai_manager_modules.ai_manager_text_matcher import TextMatcher
 
 
 class KeywordTask(AITask):
     """Turns one rule's text into a cleaned list of keywords."""
-
-    _GENERAL_WORDS = {"experience", "years", "year", "skills", "skill", "has", "have", "knowledge",
-                      "certification", "certifications", "certified", "record", "records", "related",
-                      "field", "good", "strong"}
-
+    # Key word prompt template. The AI is asked to return a JSON object with a list of keywords that would prove the rule.
     _PROMPT = ChatPromptTemplate.from_messages([
         ("system",
          "You help a hiring team check resumes against their rules. "
@@ -29,9 +26,12 @@ class KeywordTask(AITask):
         ("human", "Rule: {rule}"),
     ])
 
+    
     def _build_prompt(self, task_input: str):
+        """Builds the prompt using the rule set as input."""
         return self._PROMPT.invoke({"rule": task_input})
 
+    """Parses the AI's reply and returns a list of keywords."""
     def _parse_reply(self, reply: dict, task_input: str) -> list[str]:
         suggested = reply.get("keywords")
         if not isinstance(suggested, list):
@@ -40,13 +40,13 @@ class KeywordTask(AITask):
         return self._add_word_forms(keywords)
 
     def _remove_general_words(self, suggested: list) -> list[str]:
-        """Keeps a keyword only if it has a useful word, so "2 years" is dropped."""
+        """Removes keywords that are too general to be useful"""
         keywords = []
         for word in suggested:
             word = str(word).strip()
             useful = []
             for part in word.lower().split():
-                if not part.isdigit() and part not in self._GENERAL_WORDS:
+                if not part.isdigit() and part not in TextMatcher.GENERAL_WORDS:
                     useful.append(part)
             if len(useful) > 0 and word not in keywords:
                 keywords.append(word)

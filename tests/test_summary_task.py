@@ -83,9 +83,9 @@ class TestSummaryTask(unittest.TestCase):
         with self.assertRaises(LLMError):
             SummaryTask(FakeLLMClient()).run(REPORT)
 
-    def test_summary_without_trailing_period_gets_period_appended(self):
-        result = self._run_with_summary("Ada scored 77.8 out of 100 across the screening")
-        self.assertEqual(result, f"{COUNTS} Ada scored 77.8 out of 100 across the screening.")
+    def test_long_summary_without_ending_is_still_rejected(self):
+        with self.assertRaises(LLMError):
+            self._run_with_summary("The rule that the fewest resumes met is")
 
     def test_integer_and_decimal_equivalent_numbers_match(self):
         report = {**REPORT, "top_candidates": [{"name": "Ada", "file": "ada.pdf", "score": 100.0}]}

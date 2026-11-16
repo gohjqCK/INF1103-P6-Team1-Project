@@ -1,6 +1,5 @@
 """The AI Manager's public interface, used by the rest of the application."""
 from concurrent.futures import ThreadPoolExecutor
-import re
 from typing import Callable, Optional
 
 from ai_manager_modules.ai_manager_keyword_task import KeywordTask
@@ -9,21 +8,18 @@ from ai_manager_modules.ai_manager_llm_error import LLMError
 from ai_manager_modules.ai_manager_resume_scorer import ResumeScorer
 from ai_manager_modules.ai_manager_screening_task import ScreeningTask
 from ai_manager_modules.ai_manager_summary_task import SummaryTask
+from ai_manager_modules.ai_manager_summary_reconciler import SummaryReconciler
 
 
 class AIManager:
     """Checks the connection, adds keywords to rules, screens and scores resumes, and writes the summary text."""
 
-    _RULE_STOPWORDS = KeywordTask._GENERAL_WORDS | {
-        "with", "such", "from", "into", "using", "than", "this", "that", "least",
-        "must", "should", "able", "work", "working", "hands", "about",
-    }
-    
     def __init__(self, client: LLMClient, max_workers: int = 4):
         self._client = client
         self._max_workers = max_workers
         self._keyword_task = KeywordTask(client)
         self._summary_task = SummaryTask(client)
+        self._summary_reconciler = SummaryReconciler()
 
     def check_connection(self) -> bool:
         """Returns True if the AI is ready to answer."""
@@ -118,75 +114,13 @@ class AIManager:
         entry["outcome"] = "scored"
         entry["score"] = outcome["score"]
         entry.update(result["candidate_info"])
-        entry["summary"] = self._reconcile_summary(
+        entry["summary"] = self._summary_reconciler.reconcile(
             entry.get("summary", ""),
             entry["rules_met"],
             entry["rules_missed"],
             rules or [],
         )
         return entry
-
-    @classmethod
-    def _reconcile_summary(
-        cls,
-        summary: str,
-        rules_met: list[str],
-        rules_missed: list[str],
-        rules: list[dict],
-    ) -> str:
-        """Prevents candidate_info.summary from claiming skills or rules that the scorer marked missed."""
-        if not summary or not rules_missed:
-            return summary
-
-        rule_by_text = {str(r.get("text", "")): r for r in (rules or [])}
-        met_tokens = set()
-        for r_text in rules_met:
-            rule = rule_by_text.get(r_text, {})
-            for kw in rule.get("keywords", []):
-                met_tokens.update(re.findall(r"[a-z0-9]+", str(kw).lower()))
-            for tok in re.findall(r"[a-z0-9]+", r_text.lower()):
-                if len(tok) >= 3 and tok not in cls._RULE_STOPWORDS:
-                    met_tokens.add(tok)
-
-        cleaned = summary
-        unmatched_notes = []
-        for missed_text in rules_missed:
-            rule = rule_by_text.get(missed_text, {})
-            candidates = set()
-            for kw in rule.get("keywords", []):
-                for tok in re.findall(r"[a-z0-9]+", str(kw).lower()):
-                    if len(tok) >= 3 and tok not in cls._RULE_STOPWORDS and tok not in met_tokens:
-                        candidates.add(tok)
-            for tok in re.findall(r"[a-z0-9]+", missed_text.lower()):
-                if len(tok) >= 3 and tok not in cls._RULE_STOPWORDS and tok not in met_tokens:
-                    candidates.add(tok)
-
-            contradicted = False
-            for tok in sorted(candidates, key=len, reverse=True):
-                if re.search(rf"\b{re.escape(tok)}\b", cleaned, re.IGNORECASE):
-                    contradicted = True
-                    conj_pat = re.compile(
-                        rf"(?:\s+and\s+|,\s*)(?:(?!\band\b)[^.,;\n])*?\b{re.escape(tok)}\b(?:\s+databases?)?",
-                        re.IGNORECASE,
-                    )
-                    cleaned = conj_pat.sub(
-                        lambda m: m.group(0)
-                        if any(re.search(rf"\b{re.escape(mt)}\b", m.group(0).lower()) for mt in met_tokens)
-                        else "",
-                        cleaned,
-                    )
-            if contradicted and any(
-                re.search(rf"\b{re.escape(tok)}\b", cleaned, re.IGNORECASE) for tok in candidates
-            ):
-                unmatched_notes.append(missed_text)
-
-        cleaned = re.sub(r"\s{2,}", " ", cleaned).replace(" ,", ",").replace(" .", ".").strip()
-        if unmatched_notes:
-            note = "Note: Did not meet requirement(s): " + "; ".join(unmatched_notes) + "."
-            if cleaned and not cleaned.endswith((".", "!", "?")):
-                cleaned += "."
-            cleaned = f"{cleaned} {note}".strip()
-        return cleaned
 
     @staticmethod
     def _empty_entry(resume: dict) -> dict:
