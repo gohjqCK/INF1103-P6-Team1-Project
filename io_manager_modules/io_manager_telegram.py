@@ -80,6 +80,7 @@ class TelegramIOManager(BaseIOManager):
         data_bridge: Optional[TelegramDataBridge] = None,
         formatter: Optional[TelegramFormatter] = None,
         keyboards: Optional[TelegramKeyboards] = None,
+        ai_status_checker: Optional[Callable[[], bool]] = None,
     ):
         """Initializes Telegram bot dependencies, bridge storage, and command handlers."""
         if "load_dotenv" in globals():
@@ -119,6 +120,7 @@ class TelegramIOManager(BaseIOManager):
         self._formatter = formatter or TelegramFormatter()
         self._keyboards = keyboards or TelegramKeyboards()
         self._pipeline_runner = pipeline_runner
+        self._ai_status_checker = ai_status_checker
         self._latest_results: List[Dict[str, Any]] = []
         self._screening_lock = threading.Lock()
         self._screening_companies: set[str] = set()
@@ -320,6 +322,16 @@ class TelegramIOManager(BaseIOManager):
     # UI Presentations
     # -------------------------------------------------------------------------
 
+    def _is_ai_online(self) -> Optional[bool]:
+        """Checks whether the configured AI engine is currently reachable."""
+        if not callable(self._ai_status_checker):
+            return None
+        try:
+            return bool(self._ai_status_checker())
+        except Exception as err:
+            self._log_server_event("ERROR", f"AI availability check failed: {err}")
+            return False
+
     def _send_main_dashboard(self, chat_id: int, user_id: int) -> None:
         """Sends either the onboarding auth menu or the active company dashboard."""
         comp_name, comp_info = self._get_active_company(user_id)
@@ -342,6 +354,7 @@ class TelegramIOManager(BaseIOManager):
         resumes = self._bridge.list_resumes(comp_id)
         results, _ = self._bridge.get_screening_results(comp_id, business_rules_id=active_set_id)
         top_n = self._session_store.get_effective_top_n(chat_id, len(resumes))
+        ai_online = self._is_ai_online()
 
         msg = self._formatter.format_dashboard(
             company_name=comp_name,
@@ -352,6 +365,7 @@ class TelegramIOManager(BaseIOManager):
             top_n=top_n,
             has_results=bool(results),
             active_set_name=active_set_name,
+            ai_online=ai_online,
         )
         self._bot.send_message(
             chat_id,

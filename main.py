@@ -28,7 +28,11 @@ def main():
         print("  [Notice] Ollama offline. Screening will use the offline fallback.")
 
     # 3. Runs in telegram bot in the main thread
-    bot = TelegramIOManager(token=token, pipeline_runner=pipeline.run)
+    bot = TelegramIOManager(
+        token=token,
+        pipeline_runner=pipeline.run,
+        ai_status_checker=pipeline.check_ai_connection,
+    )
     bot.start()
 
 

@@ -229,6 +229,26 @@ class TestTelegramFormatterAndKeyboards(unittest.TestCase):
         self.assertIn("#101", text)
         self.assertIn("5 PDF(s)", text)
 
+        self.assertEqual(text.count("AI Engine:"), 0)
+
+        online_text = TelegramFormatter.format_dashboard(
+            company_name="Acme Corp",
+            invite_code="ACME-1234",
+            company_id=101,
+            resume_count=5,
+            ai_online=True,
+        )
+        self.assertIn("Online (Ollama AI)", online_text)
+
+        offline_text = TelegramFormatter.format_dashboard(
+            company_name="Acme Corp",
+            invite_code="ACME-1234",
+            company_id=101,
+            resume_count=5,
+            ai_online=False,
+        )
+        self.assertIn("Offline Mode (Keyword Fallback)", offline_text)
+
     def test_format_results_overview(self):
         ranked = [
             {"name": "Alice", "score": 90.5, "reason": "Strong match"},
@@ -862,6 +882,42 @@ class TestBugFixesAndUsability(unittest.TestCase):
         self.assertIn("Knows Python", profile)
         self.assertIn("<b>Rules Missed:</b>", profile)
         self.assertIn("Knows Kubernetes", profile)
+
+    def test_dashboard_reflects_live_ollama_status_and_handles_checker_errors(self):
+        bridge = TelegramDataBridge(use_cloud=False)
+        bridge.create_company("Acme", "h", 10, "ACME-1234")
+        states = [True, False]
+
+        def checker():
+            if not states:
+                raise RuntimeError("Ollama unreachable")
+            return states.pop(0)
+
+        fake_module = MagicMock()
+        fake_module.TeleBot.side_effect = _FakeTeleBot
+        with (
+            patch("io_manager_modules.io_manager_telegram._TELEBOT_AVAILABLE", True),
+            patch("io_manager_modules.io_manager_telegram.telebot", fake_module),
+            patch("io_manager_modules.io_manager_telegram.BotCommand", side_effect=lambda c, d: (c, d)),
+        ):
+            tg = TelegramIOManager(
+                token="123456:TEST_TOKEN",
+                use_cloud=False,
+                data_bridge=bridge,
+                ai_status_checker=checker,
+            )
+        tg._session_store.set_active_company_name(10, "Acme")
+
+        with patch("sys.stdout", new=io.StringIO()):
+            tg._send_main_dashboard(55, 10)
+            tg._send_main_dashboard(55, 10)
+            tg._send_main_dashboard(55, 10)
+
+        sent_texts = [m[1] for m in tg._bot.sent_messages]
+        self.assertEqual(len(sent_texts), 3)
+        self.assertIn("Online (Ollama AI)", sent_texts[0])
+        self.assertIn("Offline Mode (Keyword Fallback)", sent_texts[1])
+        self.assertIn("Offline Mode (Keyword Fallback)", sent_texts[2])
 
 
 if __name__ == "__main__":

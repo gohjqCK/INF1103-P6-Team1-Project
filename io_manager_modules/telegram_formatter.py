@@ -27,6 +27,7 @@ class TelegramFormatter:
         top_n: int = 3,
         has_results: bool = False,
         active_set_name: Optional[str] = None,
+        ai_online: Optional[bool] = None,
     ) -> str:
         """Formats the main company dashboard overview in Telegram HTML."""
         status_text = "✅ Results Available" if has_results else "⏳ Not Run Yet"
@@ -35,13 +36,18 @@ class TelegramFormatter:
             if active_set_name
             else "📂 <b>Active Rule Set:</b> <i>None created yet</i>"
         )
+        mode_line = ""
+        if ai_online is True:
+            mode_line = "\n🤖 <b>AI Engine:</b> 🟢 Online (Ollama AI)"
+        elif ai_online is False:
+            mode_line = "\n🤖 <b>AI Engine:</b> 🟠 Offline Mode (Keyword Fallback)"
         return (
             f"🏢 <b>Company Folder:</b> {_esc(company_name)} <code>(ID: #{company_id})</code>\n"
             f"🔑 <b>Team Invite Code:</b> <code>{_esc(invite_code)}</code>\n\n"
             f"{set_line}\n"
             f"📁 <b>Uploaded Resumes:</b> {resume_count} PDF(s)\n"
             f"🎯 <b>Shortlist Limit:</b> Top {top_n}\n"
-            f"📊 <b>Screening Status:</b> {status_text}\n\n"
+            f"📊 <b>Screening Status:</b> {status_text}{mode_line}\n\n"
             f"📤 <b>Upload Resumes Anytime:</b>\n"
             f"Drag & drop or attach any <b>.pdf</b> resume directly into this chat to add it to your company.\n\n"
             f"<i>Use the buttons below to manage rule sets, upload resumes, and run AI screening!</i>\n"
