@@ -1,6 +1,7 @@
 # Handles API connectivity and queries for Supabase DB
 import os
 import re
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -8,6 +9,21 @@ from data_manager_modules.data_manager_resume import Resume
 
 load_dotenv()
 
+
+def _load_env_file() -> None:
+    root = Path(__file__).resolve().parent.parent
+    for env_name in (".env", "data_manager.env"):
+        env_path = root / env_name
+        if env_path.is_file():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_env_file()
 
 class SupabaseHandler:
     # Handles database transactions with Supabase
