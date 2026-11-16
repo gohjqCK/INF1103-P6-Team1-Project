@@ -98,13 +98,19 @@ def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredLis
     #Looping through all resume in AI Output
     for raw_resume in resume_list_copy:
       #creates online resume or offline resume using object_type #OCP
-      resume=object_type(raw_resume)
+      try:
+        resume=object_type(raw_resume)
 
-      #Decides which list (accepted, rejeced or invalid) to place the resume in
-      category=ResumeEvaluator.evaluate(resume)
-      
-      #Adds the resume and the list category to overall list
-      overallList.add(resume,category) 
+      except NameError:
+          print("Resume type does not exist. Skipping Resume.")
+          continue
+       #Skips the Resume and continues to the next resume
+      else:
+        #Decides which list (accepted, rejeced or invalid) to place the resume in
+        category=ResumeEvaluator.evaluate(resume)
+        
+        #Adds the resume and the list category to overall list
+        overallList.add(resume,category) 
     return overallList.get_accepted_list,overallList.get_rejected_list,overallList.get_invalid_list
 
 
