@@ -1,16 +1,15 @@
 # Handles API connectivity and queries for Supabase DB
+# Handles API connectivity and queries for Supabase DB
 import os
 import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from dotenv import load_dotenv
 from supabase import Client, create_client
 from data_manager_modules.data_manager_resume import Resume
 
-load_dotenv()
-
 
 def _load_env_file() -> None:
+    """Loads environment variables from .env or data_manager.env in the project root if present."""
     root = Path(__file__).resolve().parent.parent
     for env_name in (".env", "data_manager.env"):
         env_path = root / env_name
@@ -25,6 +24,7 @@ def _load_env_file() -> None:
 
 _load_env_file()
 
+
 class SupabaseHandler:
     # Handles database transactions with Supabase
 
@@ -33,9 +33,23 @@ class SupabaseHandler:
     def __init__(self, url: Optional[str] = None, key: Optional[str] = None):
         self.url = url or os.getenv("SUPABASE_URL")
         self.key = key or os.getenv("SUPABASE_KEY")
-        if not self.url or not self.key:
-            raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY in environment or .env file.")
-        self.client: Client = create_client(self.url, self.key)
+        self._client: Optional[Client] = None
+
+    @property
+    def client(self) -> Client:
+        """Lazily initializes the Supabase client only when a query is executed."""
+        if self._client is None:
+            url = self.url or os.getenv("SUPABASE_URL")
+            key = self.key or os.getenv("SUPABASE_KEY")
+            if not url or not key:
+                raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY in environment or .env file.")
+            self._client = create_client(url, key)
+        return self._client
+
+    @client.setter
+    def client(self, value: Optional[Client]) -> None:
+        # Allows unit tests to inject a mock Supabase client directly
+        self._client = value
 
 # -----------------------------------------------------------------
 # Functions to handle company + users creation to supabase
