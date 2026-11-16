@@ -81,6 +81,7 @@ class TelegramIOManager(BaseIOManager):
         formatter: Optional[TelegramFormatter] = None,
         keyboards: Optional[TelegramKeyboards] = None,
     ):
+        """Initializes Telegram bot dependencies, bridge storage, and command handlers."""
         if "load_dotenv" in globals():
             load_dotenv()
 
@@ -137,6 +138,7 @@ class TelegramIOManager(BaseIOManager):
 
     @staticmethod
     def _log_server_event(category: str, message: str) -> None:
+        """Logs a timestamped Telegram manager event to the server console."""
         timestamp = datetime.now(SGT_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S SGT")
         print(f"[{timestamp}] [TELEGRAM:{category}] {message}")
 
@@ -150,17 +152,21 @@ class TelegramIOManager(BaseIOManager):
     # -------------------------------------------------------------------------
 
     def display_message(self, message: str) -> None:
+        """Logs an informational message for the Telegram I/O manager."""
         self._log_server_event("INFO", message)
 
     def display_error(self, error_message: str) -> None:
+        """Logs an error message for the Telegram I/O manager."""
         self._log_server_event("ERROR", error_message)
 
     def display_success(self, success_message: str) -> None:
+        """Logs a success message for the Telegram I/O manager."""
         self._log_server_event("SUCCESS", success_message)
 
     def display_screening_results(
         self, ranked_candidates: List[Any], top_n: Optional[int] = None
     ) -> List[Any]:
+        """Stores the latest ranked screening results and returns the requested slice."""
         self._latest_results = list(ranked_candidates or [])
         top_list = self._latest_results[:top_n] if top_n else self._latest_results
         self._log_server_event("RESULTS", f"Prepared {len(top_list)} ranked candidate(s).")
@@ -183,6 +189,7 @@ class TelegramIOManager(BaseIOManager):
     # -------------------------------------------------------------------------
 
     def _get_active_company(self, user_id: int) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Resolves the user's active company folder unless explicitly logged out."""
         active_name = self._session_store.get_active_company_name(user_id)
         is_logged_out_fn = getattr(self._session_store, "is_logged_out", None)
         allow_fallback = not is_logged_out_fn(user_id) if callable(is_logged_out_fn) else True
@@ -201,6 +208,7 @@ class TelegramIOManager(BaseIOManager):
         text: str,
         reply_markup: Any = None,
     ) -> None:
+        """Sends long HTML messages in Telegram-safe chunks with plain-text fallback."""
         chunks: List[str] = []
         current = ""
         for line in (text or "").splitlines(keepends=True):
@@ -231,12 +239,14 @@ class TelegramIOManager(BaseIOManager):
                     self._log_server_event("ERROR", f"Telegram plain-text fallback failed (chat={chat_id}): {fallback_err}")
 
     def _edit_safe_html(self, chat_id: int, message_id: int, text: str) -> None:
+        """Edits an existing HTML message while ignoring benign Telegram edit errors."""
         try:
             self._bot.edit_message_text(text, chat_id=chat_id, message_id=message_id)
         except Exception:
             pass
 
     def _delete_message_safe(self, chat_id: int, message_id: Optional[int]) -> None:
+        """Deletes a bot or user message without raising if deletion fails."""
         if not self._bot or message_id is None:
             return
         try:
@@ -245,6 +255,7 @@ class TelegramIOManager(BaseIOManager):
             pass
 
     def _clear_pending_steps(self, chat_id: int) -> None:
+        """Cancels any pending next-step conversation handlers for the given chat."""
         if not self._bot:
             return
         try:
@@ -254,6 +265,7 @@ class TelegramIOManager(BaseIOManager):
             pass
 
     def _register_bot_commands(self) -> None:
+        """Registers slash commands (/start, /menu, /help) in Telegram's command menu."""
         if not self._bot or BotCommand is None:
             return
         try:
@@ -269,6 +281,7 @@ class TelegramIOManager(BaseIOManager):
             pass
 
     def _get_joined_companies_safe(self, user_id: int) -> List[Dict[str, Any]]:
+        """Safely lists all company folders linked to a Telegram user."""
         list_fn = getattr(self._bridge, "list_user_companies", None)
         if not callable(list_fn):
             return []
@@ -279,6 +292,7 @@ class TelegramIOManager(BaseIOManager):
             return []
 
     def _answer_callback_safe(self, call_id: str) -> None:
+        """Acknowledges an inline button press so Telegram stops the loading spinner."""
         try:
             self._bot.answer_callback_query(call_id)
         except Exception as err:
@@ -291,6 +305,7 @@ class TelegramIOManager(BaseIOManager):
         err: Exception,
         reply_to_message: Any = None,
     ) -> None:
+        """Logs an exception and sends an HTML-escaped error alert to the user."""
         self._log_server_event("ERROR", f"{context}: {err}")
         body = f"❌ <b>{html.escape(context)}:</b> {html.escape(str(err))}"
         try:
@@ -306,6 +321,7 @@ class TelegramIOManager(BaseIOManager):
     # -------------------------------------------------------------------------
 
     def _send_main_dashboard(self, chat_id: int, user_id: int) -> None:
+        """Sends either the onboarding auth menu or the active company dashboard."""
         comp_name, comp_info = self._get_active_company(user_id)
         if not comp_name or not comp_info:
             joined_companies = self._get_joined_companies_safe(user_id)
@@ -349,6 +365,7 @@ class TelegramIOManager(BaseIOManager):
         )
 
     def _send_rules_menu(self, chat_id: int, comp_name: str, comp_id: int) -> None:
+        """Sends the company's active rule set overview and rule action keyboard."""
         all_sets = self._bridge.list_rule_sets(comp_id)
         active_set = self._bridge.get_active_rule_set(comp_id)
         rules = active_set.get("rules", []) if active_set else []
@@ -364,6 +381,7 @@ class TelegramIOManager(BaseIOManager):
         )
 
     def _send_resumes_menu(self, chat_id: int, comp_name: str, comp_id: int) -> None:
+        """Sends the uploaded resumes list and resume management keyboard."""
         resumes = self._bridge.list_resumes(comp_id)
         msg = self._formatter.format_resumes_list(comp_name, resumes)
         self._send_safe_html(
@@ -725,8 +743,10 @@ class TelegramIOManager(BaseIOManager):
     # -------------------------------------------------------------------------
 
     def _register_handlers(self) -> None:
+        """Registers Telegram command, document upload, text, and button handlers."""
         @self._bot.message_handler(commands=["start", "menu", "help"])
         def handle_start(message: Message):
+            """Handles /start, /menu, and /help slash commands."""
             try:
                 self._clear_pending_steps(message.chat.id)
                 user_label = message.from_user.username or message.from_user.first_name or str(message.from_user.id)
@@ -756,6 +776,7 @@ class TelegramIOManager(BaseIOManager):
 
         @self._bot.message_handler(content_types=["document"])
         def handle_pdf_upload(message: Message):
+            """Validates and stores incoming PDF resume attachments for the active company."""
             self._clear_pending_steps(message.chat.id)
             try:
                 comp_name, comp_info = self._get_active_company(message.from_user.id)
@@ -787,6 +808,7 @@ class TelegramIOManager(BaseIOManager):
                 message,
                 f"⏳ Processing <b>{safe_fname}</b> for <b>{safe_cname}</b>...",
             )
+            # Download PDF bytes from Telegram and persist via bridge
             try:
                 file_info = self._bot.get_file(doc.file_id)
                 if not getattr(file_info, "file_path", None):
@@ -850,6 +872,7 @@ class TelegramIOManager(BaseIOManager):
 
         @self._bot.message_handler(content_types=["text"])
         def handle_text_message(message: Message):
+            """Prompts users to upload PDFs or open /menu when sending stray text."""
             try:
                 self._bot.reply_to(
                     message,
@@ -860,6 +883,7 @@ class TelegramIOManager(BaseIOManager):
 
         @self._bot.callback_query_handler(func=lambda call: True)
         def handle_callbacks(call: CallbackQuery):
+            """Routes inline keyboard button presses to auth, menu, and screening actions."""
             chat_id = call.message.chat.id
             user_id = call.from_user.id
             data = call.data or ""
@@ -867,6 +891,7 @@ class TelegramIOManager(BaseIOManager):
             self._clear_pending_steps(chat_id)
 
             try:
+                # ---- Company Authentication & Switching ----
                 if data == "auth_create":
                     msg = self._bot.send_message(
                         chat_id,
@@ -1124,6 +1149,7 @@ class TelegramIOManager(BaseIOManager):
         return True
 
     def _step_set_custom_topn(self, message: Message) -> None:
+        """Validates and saves a custom Top-N shortlist limit from user input."""
         if self._handle_step_slash_command(message):
             return
         text = (message.text or "").strip()
@@ -1163,6 +1189,7 @@ class TelegramIOManager(BaseIOManager):
             self._notify_user_error(message.chat.id, "Could not update Top N limit", err, reply_to_message=message)
 
     def _step_create_company_name(self, message: Message) -> None:
+        """Validates the new company folder name and prompts for a passcode."""
         if self._handle_step_slash_command(message):
             return
         try:
@@ -1184,6 +1211,7 @@ class TelegramIOManager(BaseIOManager):
         self._bot.register_next_step_handler(msg, self._step_create_company_passcode, name)
 
     def _step_create_company_passcode(self, message: Message, name: str) -> None:
+        """Hashes the passcode, creates the company folder, and opens its dashboard."""
         if self._handle_step_slash_command(message):
             return
         raw_passcode = message.text or ""
@@ -1231,6 +1259,7 @@ class TelegramIOManager(BaseIOManager):
         self._send_main_dashboard(message.chat.id, message.from_user.id)
 
     def _step_join_company_code(self, message: Message) -> None:
+        """Looks up a company by invite code and prompts for its passcode."""
         if self._handle_step_slash_command(message):
             return
         code = (message.text or "").strip().upper()
@@ -1257,6 +1286,7 @@ class TelegramIOManager(BaseIOManager):
         self._bot.register_next_step_handler(msg, self._step_join_company_passcode, record)
 
     def _step_join_company_passcode(self, message: Message, record: Dict[str, Any]) -> None:
+        """Verifies the company passcode and links the user as a member."""
         if self._handle_step_slash_command(message):
             return
         raw_passcode = message.text or ""
@@ -1284,6 +1314,7 @@ class TelegramIOManager(BaseIOManager):
         self._send_main_dashboard(message.chat.id, message.from_user.id)
 
     def _step_create_ruleset_name(self, message: Message, comp_name: str, comp_id: int) -> None:
+        """Validates and creates a new named rule set for the active company."""
         if self._handle_step_slash_command(message):
             return
         set_name = (message.text or "").strip()
@@ -1331,6 +1362,7 @@ class TelegramIOManager(BaseIOManager):
         comp_id: int,
         rule_set_id: int,
     ) -> None:
+        """Validates and renames the selected rule set."""
         if self._handle_step_slash_command(message):
             return
         new_name = (message.text or "").strip()
@@ -1377,6 +1409,7 @@ class TelegramIOManager(BaseIOManager):
         comp_id: int,
         rule_set_id: int,
     ) -> None:
+        """Validates unique rule text and asks the user to choose a priority level."""
         if self._handle_step_slash_command(message):
             return
         text = (message.text or "").strip()
@@ -1420,6 +1453,7 @@ class TelegramIOManager(BaseIOManager):
         rule_set_id: int,
         idx: int,
     ) -> None:
+        """Validates updated rule text, saves the edit, and returns to the rules menu."""
         if self._handle_step_slash_command(message):
             return
         new_text = (message.text or "").strip()
@@ -1475,6 +1509,8 @@ class TelegramIOManager(BaseIOManager):
     # -------------------------------------------------------------------------
 
     def _trigger_screening(self, chat_id: int, user_id: int, comp_name: str, comp_id: int) -> None:
+        """Runs the AI screening pipeline for the active rule set and saves results."""
+        # Guard against concurrent screening runs for the same company
         with self._screening_lock:
             if comp_name in self._screening_companies:
                 self._bot.send_message(
@@ -1563,6 +1599,7 @@ class TelegramIOManager(BaseIOManager):
             )
 
             def on_progress(stage_text: str) -> None:
+                """Updates the live Telegram status message as screening stages advance."""
                 self._edit_safe_html(
                     chat_id,
                     wait_msg.message_id,
@@ -1570,6 +1607,7 @@ class TelegramIOManager(BaseIOManager):
                     f"{html.escape(stage_text)}",
                 )
 
+            # Stream live stage updates and persist ranked results
             try:
                 pipeline_output = self._pipeline_runner(employer_inputs, progress_callback=on_progress)
                 if isinstance(pipeline_output, dict):
@@ -1606,10 +1644,12 @@ class TelegramIOManager(BaseIOManager):
                     f"❌ Screening failed: {html.escape(str(err))}",
                 )
         finally:
+            # Always release company lock even if validation or pipeline fails
             with self._screening_lock:
                 self._screening_companies.discard(comp_name)
 
     def _send_results_view(self, chat_id: int, comp_name: str, comp_id: int) -> None:
+        """Sends the ranked Top-N screening overview and candidate profile buttons."""
         active_set = self._bridge.get_active_rule_set(comp_id)
         active_set_id = active_set["rule_set_id"] if active_set else None
         active_set_name = active_set["set_name"] if active_set else None
@@ -1636,6 +1676,7 @@ class TelegramIOManager(BaseIOManager):
         self._send_safe_html(chat_id, msg, reply_markup=self._keyboards.results_menu(len(ranked)))
 
     def _send_candidate_pdf(self, chat_id: int, comp_name: str, comp_id: int, idx: int) -> None:
+        """Sends the candidate's PDF resume directly or falls back to its storage URL."""
         try:
             active_set = self._bridge.get_active_rule_set(comp_id)
             active_set_id = active_set["rule_set_id"] if active_set else None
@@ -1691,6 +1732,7 @@ class TelegramIOManager(BaseIOManager):
         self._bot.send_message(chat_id, f"❌ PDF file '{html.escape(filename)}' not found in storage.")
 
     def _send_summary_breakdown(self, chat_id: int, comp_name: str, comp_id: int) -> None:
+        """Formats and sends the AI summary breakdown report for the active rule set."""
         active_set = self._bridge.get_active_rule_set(comp_id)
         active_set_id = active_set["rule_set_id"] if active_set else None
         active_set_name = active_set["set_name"] if active_set else None

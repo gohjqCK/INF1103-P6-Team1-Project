@@ -9,6 +9,7 @@ class TelegramSessionStore:
     """Encapsulates active company selections and per-chat UI configuration state."""
 
     def __init__(self, default_top_n: int = 3):
+        """Initializes thread-safe in-memory per-chat and per-user session state."""
         self._lock = threading.RLock()
         self._default_top_n = default_top_n
         self._sessions: Dict[int, Dict[str, Any]] = {}

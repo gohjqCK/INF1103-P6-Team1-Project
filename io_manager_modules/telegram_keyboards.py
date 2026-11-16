@@ -9,6 +9,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def auth_menu(joined_companies: Optional[List[Dict[str, Any]]] = None) -> InlineKeyboardMarkup:
+        """Builds the initial menu for creating, joining, or switching companies."""
         kb = InlineKeyboardMarkup(row_width=1)
         for comp in joined_companies or []:
             comp_id = comp.get("company_id")
@@ -24,6 +25,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def cancel_button(callback_data: str = "menu_main", label: str = "❌ Cancel") -> InlineKeyboardMarkup:
+        """Builds a single-button inline keyboard to cancel the active step."""
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton(label, callback_data=callback_data))
         return kb
@@ -34,6 +36,7 @@ class TelegramKeyboards:
         cancel_callback: str,
         confirm_label: str = "✅ Yes, Delete",
     ) -> InlineKeyboardMarkup:
+        """Builds a Yes/Cancel confirmation prompt for destructive actions."""
         kb = InlineKeyboardMarkup(row_width=2)
         kb.add(
             InlineKeyboardButton(confirm_label, callback_data=confirm_callback),
@@ -72,6 +75,7 @@ class TelegramKeyboards:
         has_rules: bool = False,
         set_count: int = 0,
     ) -> InlineKeyboardMarkup:
+        """Builds the action menu for managing rule sets and individual rules."""
         kb = InlineKeyboardMarkup(row_width=1)
         if has_active_set:
             kb.add(InlineKeyboardButton("➕ Append New Rule to Set", callback_data="rule_add"))
@@ -98,6 +102,7 @@ class TelegramKeyboards:
         rule_sets: List[Dict[str, Any]],
         active_set_id: Optional[int] = None,
     ) -> InlineKeyboardMarkup:
+        """Builds the list of rule sets so the user can swap the active set."""
         kb = InlineKeyboardMarkup(row_width=1)
         for rs in rule_sets:
             rs_id = rs.get("rule_set_id")
@@ -117,6 +122,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def priority_selection_menu() -> InlineKeyboardMarkup:
+        """Builds the rule priority/weight picker when adding a new rule."""
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(
             InlineKeyboardButton("🔴 Must Have (Weight: 4)", callback_data="rule_prio:must"),
@@ -130,6 +136,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def edit_rules_menu(rules: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+        """Builds a selectable list of rules for editing."""
         kb = InlineKeyboardMarkup(row_width=1)
         for idx, rule in enumerate(rules, start=1):
             prio = str(rule.get("priority", "reject")).lower()
@@ -147,6 +154,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def edit_rule_action_menu(idx: int) -> InlineKeyboardMarkup:
+        """Builds the edit sub-menu to choose text or priority updates for a rule."""
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(
             InlineKeyboardButton("✏️ Edit Rule Text", callback_data=f"rule_edit_text:{idx}"),
@@ -157,6 +165,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def edit_rule_priority_menu(idx: int) -> InlineKeyboardMarkup:
+        """Builds the priority picker for updating an existing rule's weight."""
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(
             InlineKeyboardButton("🔴 Must Have (Weight: 4)", callback_data=f"rule_set_prio:{idx}:must"),
@@ -170,6 +179,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def delete_rules_menu(rules: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+        """Builds a selectable list of rules for single-rule deletion."""
         kb = InlineKeyboardMarkup(row_width=1)
         for idx, rule in enumerate(rules, start=1):
             prio = str(rule.get("priority", "reject")).lower()
@@ -187,6 +197,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def resumes_menu(has_resumes: bool = False) -> InlineKeyboardMarkup:
+        """Builds the resume management keyboard for deleting or clearing resumes."""
         kb = InlineKeyboardMarkup(row_width=1)
         if has_resumes:
             kb.add(
@@ -198,6 +209,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def delete_resumes_menu(resumes: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+        """Builds a selectable list of uploaded resumes for deletion."""
         kb = InlineKeyboardMarkup(row_width=1)
         for idx, res in enumerate(resumes, start=1):
             fname = str(res.get("file_name") or res.get("file") or f"Resume #{idx}")
@@ -213,6 +225,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def top_n_menu(current_top_n: int = 3, max_resumes: Optional[int] = None) -> InlineKeyboardMarkup:
+        """Builds the Top-N preset selector with an option for custom input."""
         kb = InlineKeyboardMarkup(row_width=2)
         base_presets = [1, 3, 5, 10]
         if max_resumes is not None and max_resumes > 0:
@@ -237,6 +250,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def results_menu(ranked_count: int) -> InlineKeyboardMarkup:
+        """Builds per-candidate profile/PDF buttons and the summary report button."""
         kb = InlineKeyboardMarkup(row_width=2)
         for idx in range(1, ranked_count + 1):
             kb.add(
@@ -249,6 +263,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def candidate_profile_menu(idx: int) -> InlineKeyboardMarkup:
+        """Builds the PDF download and back buttons for a candidate profile."""
         kb = InlineKeyboardMarkup()
         kb.add(
             InlineKeyboardButton("📥 Download PDF", callback_data=f"cand_pdf:{idx}"),
@@ -258,6 +273,7 @@ class TelegramKeyboards:
 
     @staticmethod
     def back_to_dashboard() -> InlineKeyboardMarkup:
+        """Builds a single button returning the user to the main dashboard."""
         kb = InlineKeyboardMarkup()
         kb.add(InlineKeyboardButton("⬅️ Back to Dashboard", callback_data="menu_main"))
         return kb

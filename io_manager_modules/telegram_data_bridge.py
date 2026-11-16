@@ -32,6 +32,7 @@ class TelegramDataBridge:
         use_cloud: Optional[bool] = None,
         validator: Optional[TelegramValidator] = None,
     ):
+        """Initializes cloud DataManager integration and in-memory fallback stores."""
         self._data_manager = data_manager
         self._use_cloud = (
             bool(getattr(data_manager, "CLOUD_READY", False))
@@ -55,9 +56,11 @@ class TelegramDataBridge:
 
     @property
     def use_cloud(self) -> bool:
+        """Returns whether cloud persistence is enabled for this bridge."""
         return self._use_cloud
 
     def _cloud_has(self, method_name: str) -> bool:
+        """Checks whether the configured cloud data manager exposes a given method."""
         return (
             self._use_cloud
             and self._data_manager is not None
@@ -503,6 +506,7 @@ class TelegramDataBridge:
             }
 
     def _get_company_upload_lock(self, company_id: int) -> threading.RLock:
+        """Returns a per-company reentrant lock for thread-safe resume uploads."""
         with self._lock:
             return self._upload_locks.setdefault(company_id, threading.RLock())
 
@@ -660,6 +664,7 @@ class TelegramDataBridge:
 
     @staticmethod
     def _results_key(company_id: int, business_rules_id: Optional[int]) -> Tuple[int, int]:
+        """Builds the cache key tuple for storing results by company and rule set."""
         return (company_id, int(business_rules_id) if business_rules_id is not None else 0)
 
     def save_screening_results(

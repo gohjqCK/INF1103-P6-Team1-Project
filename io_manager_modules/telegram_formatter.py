@@ -28,6 +28,7 @@ class TelegramFormatter:
         has_results: bool = False,
         active_set_name: Optional[str] = None,
     ) -> str:
+        """Formats the main company dashboard overview in Telegram HTML."""
         status_text = "✅ Results Available" if has_results else "⏳ Not Run Yet"
         set_line = (
             f"📂 <b>Active Rule Set:</b> {_esc(active_set_name)} ({rule_count} rule(s))"
@@ -69,6 +70,7 @@ class TelegramFormatter:
         active_set: Optional[Dict[str, Any]],
         all_sets: List[Dict[str, Any]],
     ) -> str:
+        """Formats all rule sets and the active rule set details in HTML."""
         if not active_set:
             return (
                 f"📋 <b>BUSINESS RULE SETS ({_esc(company_name)})</b>\n\n"
@@ -117,6 +119,7 @@ class TelegramFormatter:
 
     @staticmethod
     def format_resumes_list(company_name: str, resumes: List[Dict[str, Any]]) -> str:
+        """Formats the uploaded candidate resumes list for Telegram display."""
         header = f"📁 <b>RESUMES FOR {_esc(company_name)} ({len(resumes)})</b>\n"
         if not resumes:
             return (
@@ -145,6 +148,7 @@ class TelegramFormatter:
         ranked: List[Dict[str, Any]],
         rule_set_name: Optional[str] = None,
     ) -> str:
+        """Formats the ranked top-N screening results summary header."""
         scope = f"{_esc(company_name)} | {_esc(rule_set_name)}" if rule_set_name else _esc(company_name)
         lines = [f"🏆 <b>SCREENING RESULTS ({scope}) — {len(ranked)} Candidate(s)</b>\n"]
         for idx, cand in enumerate(ranked, start=1):
@@ -157,6 +161,7 @@ class TelegramFormatter:
 
     @staticmethod
     def format_candidate_profile(cand: Dict[str, Any], idx: int) -> str:
+        """Formats a single candidate's detailed score and AI evaluation profile."""
         skills_list = cand.get("skills") or []
         skills = _esc(", ".join(str(s) for s in skills_list)) if skills_list else "None listed"
 
