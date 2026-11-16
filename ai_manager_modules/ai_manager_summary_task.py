@@ -36,9 +36,7 @@ class SummaryTask(AITask):
             raise LLMError("The AI's reply did not include a written summary.")
         summary = summary.strip()
         if not summary.endswith((".", "!", "?")):
-            if len(summary.split()) < 5:
-                raise LLMError("The AI's summary was cut off before the end of a sentence.")
-            summary += "."
+            raise LLMError("The AI's summary was cut off before the end of a sentence.")
         self._check_numbers(summary, task_input)
         return f"{self._write_counts(task_input)} {summary}"
 

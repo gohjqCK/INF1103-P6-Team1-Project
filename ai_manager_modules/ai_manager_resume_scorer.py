@@ -10,12 +10,9 @@ class ResumeScorer:
     _PRIORITY_WEIGHTS = {"must": 4, "important": 3, "nice": 2, "can consider": 1}
     _KNOCKOUT = "reject"
     _NEGATION_WORDS = {"no", "not", "without", "never", "clean", "free", "none", "zero", "neither"}
-    _GENERIC_TOKENS = {
-        "experience", "years", "year", "skills", "skill", "has", "have", "knowledge",
-        "knows", "know", "certification", "certifications", "certified", "record",
-        "records", "related", "field", "good", "strong", "hands", "with", "for",
-        "and", "the", "using", "use", "work", "working", "database", "databases",
-        "system", "systems", "tool", "tools", "schema", "schemas", "ability",
+    _GENERIC_TOKENS = TextMatcher.GENERAL_WORDS | {
+        "knows", "know", "hands", "with", "for", "and", "the", "using", "use", "work", "working",
+        "database", "databases", "system", "systems", "tool", "tools", "schema", "schemas", "ability",
     }
 
     def __init__(self, rules: list[dict]):
@@ -88,7 +85,7 @@ class ResumeScorer:
 
     def _add_exact_word_matches(self, proven: list[int], unproven: list[int], matcher: TextMatcher) -> None:
         """Credits rules whose own words or shared specific keywords are in the resume."""
-        cleaned_tokens = matcher._cleaned_text.split()
+        cleaned_tokens = matcher.words()
         for number, rule in enumerate(self._rules, 1):
             # Knockout rules are skipped: "No criminal record" contains "criminal record".
             if rule["priority"] == self._KNOCKOUT or number in proven:

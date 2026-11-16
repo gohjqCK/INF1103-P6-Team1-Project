@@ -5,6 +5,8 @@ from ai_manager_modules.ai_manager import AIManager
 from ai_manager_modules.ai_manager_llm_client import LLMClient
 from ai_manager_modules.ai_manager_llm_error import LLMError
 from tests.fake_llm_client import FakeLLMClient
+from ai_manager_modules.ai_manager_summary_reconciler import SummaryReconciler
+
 
 RULES = [
     {"text": "Python", "priority": "must", "keywords": ["python"]},
@@ -176,7 +178,7 @@ class TestAIManager(unittest.TestCase):
             {"text": "Knows Python", "priority": "must", "keywords": ["python"]},
             {"text": "Experience designing SQL schemas", "priority": "must", "keywords": ["sql"]},
         ]
-        cleaned = AIManager._reconcile_summary(
+        cleaned = SummaryReconciler().reconcile(
             "Candidate has hands-on experience with Python and SQL databases.",
             rules_met=["Knows Python"],
             rules_missed=["Experience designing SQL schemas"],
@@ -185,7 +187,7 @@ class TestAIManager(unittest.TestCase):
         self.assertIn("Python", cleaned)
         self.assertNotIn("SQL databases", cleaned)
 
-        noted = AIManager._reconcile_summary(
+        noted = SummaryReconciler().reconcile(
             "Candidate has strong SQL background.",
             rules_met=["Knows Python"],
             rules_missed=["Experience designing SQL schemas"],

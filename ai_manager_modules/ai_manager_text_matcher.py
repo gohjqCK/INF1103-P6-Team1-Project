@@ -5,6 +5,12 @@ import unicodedata
 
 class TextMatcher:
     """Holds one text in cleaned form and answers questions about it."""
+    
+    GENERAL_WORDS = frozenset({
+        "experience", "years", "year", "skills", "skill", "has", "have", "knowledge",
+        "certification", "certifications", "certified", "record", "records", "related",
+        "field", "good", "strong",
+    })
 
     def __init__(self, text: str):
         self._cleaned_text = self._clean(text)
@@ -15,6 +21,10 @@ class TextMatcher:
         normalized = unicodedata.normalize("NFKC", text).lower()
         return re.sub(r"[^a-z0-9]+", " ", normalized)
 
+    def words(self) -> list[str]:
+        """Returns the cleaned text as a list of words, in order."""
+        return self._cleaned_text.split()
+    
     def contains(self, phrase: str) -> bool:
         """True if the phrase is anywhere in the text, even inside a longer word."""
         cleaned_phrase = self._clean(phrase).strip()
