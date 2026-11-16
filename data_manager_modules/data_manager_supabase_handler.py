@@ -2,8 +2,11 @@
 import os
 import re
 from typing import List, Dict, Any, Optional, Tuple
+from dotenv import load_dotenv
 from supabase import Client, create_client
 from data_manager_modules.data_manager_resume import Resume
+
+load_dotenv()
 
 
 class SupabaseHandler:
@@ -11,10 +14,11 @@ class SupabaseHandler:
 
     STORAGE_BUCKET = "resume_files"
 
-
     def __init__(self, url: Optional[str] = None, key: Optional[str] = None):
-        self.url = url or os.getenv("SUPABASE_URL", "https://gkrrffsbedfodcnnvhys.supabase.co")
-        self.key = key or os.getenv("SUPABASE_KEY", "sb_publishable_-_fcFwwIF60dlOMaC_9xMQ_YFX98Q6D")
+        self.url = url or os.getenv("SUPABASE_URL")
+        self.key = key or os.getenv("SUPABASE_KEY")
+        if not self.url or not self.key:
+            raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY in environment or .env file.")
         self.client: Client = create_client(self.url, self.key)
 
 # -----------------------------------------------------------------

@@ -20,3 +20,4 @@ summary.json
 Business_Rules.json
 
 .env
+*.env
