@@ -6,7 +6,7 @@ from Logic_manager_modules.OverallList import OverallList
 #Create Resume or Profile
 class ResumeEvaluator:
   #categorise the resume/profile into the respective list
-  def evaluate(resume) -> str:
+  def evaluate(resume:Resume) -> str:
     """Responsible ONLY for business rules and categorization."""
     if (
         resume.get_outcome != "scored"

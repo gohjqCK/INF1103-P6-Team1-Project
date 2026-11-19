@@ -87,6 +87,12 @@ def validate_resume_keys_func(resume_list):
             break
         resume_count+=1
     return result
+def validate_empty_list(resume_list:list)->bool:
+    if len(resume_list)==0:
+        print("List Empty")
+        return False
+    else:
+        return True
 
 #Filter Resume by list (accepted, rejected or invalid)
 def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredList]:
@@ -94,23 +100,29 @@ def filter_resume_func(resume_list: list,object_type: Resume)-> list[FilteredLis
 
     #crates overallList object
     overallList=OverallList()
+    if validate_empty_list(resume_list):
+        #Looping through all resume in AI Output
+        for raw_resume in resume_list_copy:
+            #creates online resume or offline resume using object_type #OCP
+            try:
+                resume=object_type(raw_resume)
 
-    #Looping through all resume in AI Output
-    for raw_resume in resume_list_copy:
-      #creates online resume or offline resume using object_type #OCP
-      try:
-        resume=object_type(raw_resume)
+            except TypeError:
+                print("Resume type does not exist. Skipping Resume.")
+                continue
+            #Skips the Resume and continues to the next resume
 
-      except NameError:
-          print("Resume type does not exist. Skipping Resume.")
-          continue
-       #Skips the Resume and continues to the next resume
-      else:
-        #Decides which list (accepted, rejeced or invalid) to place the resume in
-        category=ResumeEvaluator.evaluate(resume)
-        
-        #Adds the resume and the list category to overall list
-        overallList.add(resume,category) 
+            except KeyError:
+                print("Resume missing some dictionary keys. Skipping Resume.")
+                continue
+            else:
+                #Decides which list (accepted, rejeced or invalid) to place the resume in
+                category=ResumeEvaluator.evaluate(resume)
+                
+                #Adds the resume and the list category to overall list
+                overallList.add(resume,category) 
+    else:
+        print("AI gave empty List. No resume created.")
     return overallList.get_accepted_list,overallList.get_rejected_list,overallList.get_invalid_list
 
 
